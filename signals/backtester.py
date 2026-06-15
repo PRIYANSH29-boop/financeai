@@ -92,7 +92,7 @@ class WalkForwardBacktester:
         while i < n - self.horizon:
             window_end = min(i + self.retrain_freq, n - self.horizon)
 
-            train = df.iloc[:i]
+            train = df.iloc[: i - self.horizon]
             test = df.iloc[i:window_end]
 
             # Train using XGBoost directly (lighter than wrapper class)
@@ -141,7 +141,7 @@ class WalkForwardBacktester:
 
         return results_df
 
-    def evaluate(self, results: pd.DataFrame) -> dict:
+    def evaluate(self, results: pd.DataFrame, cost: float = 0.001) -> dict:
         acc = accuracy_score(results["actual"], results["prediction"])
         try:
             auc = roc_auc_score(results["actual"], results["probability"])
@@ -150,7 +150,7 @@ class WalkForwardBacktester:
 
         strategy_returns = np.where(
             results["prediction"] == 1,
-            results["future_return"],
+            results["future_return"] - cost,
             0,
         )
         bh_returns = results["future_return"].values

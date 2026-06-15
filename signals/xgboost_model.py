@@ -84,6 +84,7 @@ class XGBoostSignalModel:
         feature_cols: list,
         test_size: float = 0.2,
         params: Optional[dict] = None,
+        horizon: int = 5,
     ) -> dict:
         """
         Train XGBoost on engineered features with chronological split.
@@ -101,7 +102,9 @@ class XGBoostSignalModel:
 
         # Chronological split (no shuffling — finance must respect time)
         split_idx = int(len(df) * (1 - test_size))
-        train_df = df.iloc[:split_idx]
+        # Purge the last `horizon` training rows: their labels (Close.shift(-horizon))
+        # peek into the test set and would leak look-ahead information.
+        train_df = df.iloc[: split_idx - horizon]
         test_df = df.iloc[split_idx:]
 
         logger.info(
