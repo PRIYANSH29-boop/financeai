@@ -65,19 +65,21 @@ def _leg_weights(sub: pd.DataFrame, sign: float) -> pd.Series:
     return pd.Series(sign * w.values, index=sub["ticker"].values)
 
 
-def run_backtest(labeled_path="data/sp500_labeled.parquet"):
-    df = pd.read_parquet(labeled_path)
-    df["date"] = pd.to_datetime(df["date"])
-
+def rebalance_dates(df: pd.DataFrame) -> np.ndarray:
+    """Every HORIZON-th unique trading day → non-overlapping monthly rebalances."""
     dates = np.sort(df["date"].unique())
-    rebal_dates = dates[::HORIZON]
-    logger.info("%d trading days -> %d rebalances every %d days",
-                len(dates), len(rebal_dates), HORIZON)
+    return dates[::HORIZON]
 
+
+def backtest_scores(df: pd.DataFrame, score_col: str, rebal_dates) -> dict:
+    """Run the long/short decile portfolio on an arbitrary score column.
+
+    IDENTICAL machinery for both the no-ML baseline (score_col='mom_12_1m') and the
+    Phase 5 model (score_col='model_score'). Higher score = more attractive (long).
+    Returns dict with res (per-period frame), ic (Series), decile_spread (Series).
+    """
     prev_w = pd.Series(dtype=float)   # signed target weights from the last rebalance
-    records = []                      # per-period results
-    ic_list = []                      # Rank IC per rebalance
-    decile_rows = []                  # (signal_decile, fwd_ret) pooled across dates
+    records, ic_list, decile_rows = [], [], []
 
     for t in rebal_dates:
         day = df[df["date"] == t]
@@ -85,17 +87,16 @@ def run_backtest(labeled_path="data/sp500_labeled.parquet"):
             continue
 
         # Rank IC over the FULL cross-section (Spearman = Pearson on ranks).
-        ic = day[SIGNAL].corr(day["fwd_ret_1m"], method="spearman")
-        ic_list.append(ic)
+        ic_list.append(day[score_col].corr(day["fwd_ret_1m"], method="spearman"))
 
-        # Signal-decile spread (sort by the SIGNAL, look at realized future return).
+        # Score-decile spread (sort by the SCORE, look at realized future return).
         d = day.assign(
-            sig_decile=pd.qcut(day[SIGNAL].rank(method="first"), 10, labels=False)
+            sig_decile=pd.qcut(day[score_col].rank(method="first"), 10, labels=False)
         )
         decile_rows.append(d[["sig_decile", "fwd_ret_1m"]])
 
-        # Long top decile / short bottom decile by signal percentile rank.
-        srank = day[SIGNAL].rank(pct=True)
+        # Long top decile / short bottom decile by score percentile rank.
+        srank = day[score_col].rank(pct=True)
         longs = day[srank > 1 - DECILE]
         shorts = day[srank <= DECILE]
         if longs.empty or shorts.empty:
@@ -112,29 +113,39 @@ def run_backtest(labeled_path="data/sp500_labeled.parquet"):
         turnover = float((w.reindex(all_tk, fill_value=0.0)
                           - prev_w.reindex(all_tk, fill_value=0.0)).abs().sum())
         cost = COST_PER_SIDE * turnover
-        net_ret = gross_ret - cost
         prev_w = w
-
-        bench = float(day["fwd_ret_1m"].mean())  # equal-weight universe (market proxy)
 
         records.append({
             "date": pd.Timestamp(t), "gross_ret": gross_ret, "cost": cost,
-            "net_ret": net_ret, "turnover": turnover, "bench_ret": bench,
+            "net_ret": gross_ret - cost, "turnover": turnover,
+            "bench_ret": float(day["fwd_ret_1m"].mean()),  # equal-weight market proxy
             "n_long": len(longs), "n_short": len(shorts),
         })
 
     res = pd.DataFrame(records).set_index("date")
     ic = pd.Series(ic_list).dropna()
-    decile_spread = (pd.concat(decile_rows)
-                     .groupby("sig_decile")["fwd_ret_1m"].mean())
+    decile_spread = pd.concat(decile_rows).groupby("sig_decile")["fwd_ret_1m"].mean()
+    return {"res": res, "ic": ic, "decile_spread": decile_spread}
 
-    metrics = _metrics(res, ic)
+
+def run_backtest(labeled_path="data/sp500_labeled.parquet"):
+    df = pd.read_parquet(labeled_path)
+    df["date"] = pd.to_datetime(df["date"])
+
+    rebal = rebalance_dates(df)
+    logger.info("%d trading days -> %d rebalances every %d days",
+                df["date"].nunique(), len(rebal), HORIZON)
+
+    bt = backtest_scores(df, SIGNAL, rebal)
+    res, ic, decile_spread = bt["res"], bt["ic"], bt["decile_spread"]
+
+    metrics = compute_metrics(res, ic)
     _plot_equity(res, metrics, out="data/baseline_equity_curve.png")
     _print_report(res, metrics, decile_spread, ic)
     return res, metrics, decile_spread
 
 
-def _metrics(res: pd.DataFrame, ic: pd.Series) -> dict:
+def compute_metrics(res: pd.DataFrame, ic: pd.Series) -> dict:
     r = res["net_ret"]
     sharpe = r.mean() / r.std(ddof=1) * np.sqrt(PERIODS_PER_YEAR)
 
