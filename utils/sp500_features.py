@@ -32,8 +32,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sp500_features")
 
-# Longest lookback (12-month momentum) sets the eligibility threshold.
-MIN_HISTORY = 252
+# Eligibility threshold. The longest feature, mom_12_1m, references adj_close[t-252],
+# which only exists once a stock has 253 observations (252-day lookback + the current
+# day). Requiring >=253 makes "eligible" == "all features computable" — no NaN rows.
+MIN_HISTORY = 253
 
 PRICE_COLS = ["open", "high", "low", "close", "adj_close"]
 
@@ -123,8 +125,9 @@ def build_raw_features(df: pd.DataFrame):
 
     df["size"] = np.log(ac)
 
-    # B. Point-in-time eligibility: >=252 trading days of history on/before t.
-    # cumcount() is 0-based, so position-on/before-t = cumcount()+1; eligible when >=252.
+    # B. Point-in-time eligibility: >=253 trading days of history on/before t.
+    # cumcount() is 0-based, so position-on/before-t = cumcount()+1; eligible when >=253,
+    # i.e. adj_close[t-252] exists and every feature is computable (no NaN at the boundary).
     obs_on_or_before_t = g.cumcount() + 1
     df["eligible"] = obs_on_or_before_t >= MIN_HISTORY
 
@@ -161,9 +164,8 @@ def build_features(panel_path="data/sp500_panel.parquet",
     # Keep only eligible stock-days.
     elig = df[df["eligible"]].copy()
 
-    # The single first-eligible day per ticker has NaN mom_12_1m (it needs t-252,
-    # which only exists from the 253rd observation). Drop those boundary rows so the
-    # feature table has no NaN raw features; report how many were removed.
+    # Safety net: with MIN_HISTORY=253 every eligible row is fully computable, so this
+    # should drop zero rows. Kept as a defensive guard against any unexpected NaN.
     before = len(elig)
     elig = elig.dropna(subset=FEATURE_COLS).reset_index(drop=True)
     stats["removed_boundary_nan"] = before - len(elig)
@@ -190,7 +192,7 @@ def print_report(out: pd.DataFrame, stats: dict):
     print("FEATURE BUILD SUMMARY — Phase 2")
     print("=" * 60)
     print(f"Total stock-days (panel)      : {stats['total_stock_days']:,}")
-    print(f"Removed — min-history (<252)  : {stats['removed_min_history']:,}")
+    print(f"Removed — min-history (<{MIN_HISTORY})  : {stats['removed_min_history']:,}")
     print(f"Removed — 12m boundary NaN    : {stats['removed_boundary_nan']:,}")
     print(f"Final feature rows            : {stats['final_rows']:,}")
     print(f"Tickers in feature table      : {out['ticker'].nunique()}")
