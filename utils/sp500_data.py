@@ -14,7 +14,6 @@ biases any backtest upward. The fix (point-in-time constituents) is deferred —
 README and ROADMAP.md.
 """
 
-import io
 import time
 import logging
 from pathlib import Path
