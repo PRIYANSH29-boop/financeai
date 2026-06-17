@@ -82,13 +82,17 @@ def _fit_fold(train: pd.DataFrame) -> LGBMRanker:
     return model
 
 
-def walk_forward(df: pd.DataFrame) -> pd.DataFrame:
-    """Expanding-window walk-forward with 21d embargo. Returns OOS rows + model_score."""
+def walk_forward(df: pd.DataFrame, return_models: bool = False):
+    """Expanding-window walk-forward with 21d embargo. Returns OOS rows + model_score.
+
+    If return_models=True, also returns the list of per-fold fitted models (used by the
+    Phase 6 evaluation for feature importance — no retraining needed).
+    """
     df = df.sort_values(["date", "ticker"]).reset_index(drop=True)
     dates = np.sort(df["date"].unique())
     n = len(dates)
 
-    oos_parts = []
+    oos_parts, models = [], []
     fold = 0
     test_start = INITIAL_TRAIN
     while test_start < n:
@@ -103,6 +107,7 @@ def walk_forward(df: pd.DataFrame) -> pd.DataFrame:
         model = _fit_fold(train)
         test["model_score"] = model.predict(test[FEATURES])
         oos_parts.append(test)
+        models.append(model)
 
         fold += 1
         logger.info(
@@ -116,7 +121,7 @@ def walk_forward(df: pd.DataFrame) -> pd.DataFrame:
     oos = pd.concat(oos_parts, ignore_index=True)
     logger.info("Walk-forward done: %d folds, OOS %s -> %s (%d rows)",
                 fold, oos["date"].min().date(), oos["date"].max().date(), len(oos))
-    return oos
+    return (oos, models) if return_models else oos
 
 
 def _rebal_dates(oos: pd.DataFrame) -> np.ndarray:

@@ -71,11 +71,14 @@ def rebalance_dates(df: pd.DataFrame) -> np.ndarray:
     return dates[::HORIZON]
 
 
-def backtest_scores(df: pd.DataFrame, score_col: str, rebal_dates) -> dict:
+def backtest_scores(df: pd.DataFrame, score_col: str, rebal_dates,
+                    cost: float = COST_PER_SIDE) -> dict:
     """Run the long/short decile portfolio on an arbitrary score column.
 
     IDENTICAL machinery for both the no-ML baseline (score_col='mom_12_1m') and the
     Phase 5 model (score_col='model_score'). Higher score = more attractive (long).
+    `cost` is the per-side bps rate on turnover (default 10 bps); exposed so Phase 6 can
+    sweep cost sensitivity without changing the model.
     Returns dict with res (per-period frame), ic (Series), decile_spread (Series).
     """
     prev_w = pd.Series(dtype=float)   # signed target weights from the last rebalance
@@ -112,12 +115,12 @@ def backtest_scores(df: pd.DataFrame, score_col: str, rebal_dates) -> dict:
         all_tk = prev_w.index.union(w.index)
         turnover = float((w.reindex(all_tk, fill_value=0.0)
                           - prev_w.reindex(all_tk, fill_value=0.0)).abs().sum())
-        cost = COST_PER_SIDE * turnover
+        period_cost = cost * turnover
         prev_w = w
 
         records.append({
-            "date": pd.Timestamp(t), "gross_ret": gross_ret, "cost": cost,
-            "net_ret": gross_ret - cost, "turnover": turnover,
+            "date": pd.Timestamp(t), "gross_ret": gross_ret, "cost": period_cost,
+            "net_ret": gross_ret - period_cost, "turnover": turnover,
             "bench_ret": float(day["fwd_ret_1m"].mean()),  # equal-weight market proxy
             "n_long": len(longs), "n_short": len(shorts),
         })
