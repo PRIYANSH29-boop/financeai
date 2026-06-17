@@ -55,6 +55,15 @@ A production-grade financial analysis engine that combines live market data, cla
 - Fetches fundamentals: P/E, debt-to-equity, margins, growth rates
 - Validates all data for anomalies and missing values
 - Outputs clean, structured datasets ready for modelling
+- **S&P 500 panel** (`utils/sp500_data.py`): scrapes current constituents and builds a
+  tidy ~7-year daily OHLCV panel (`data/sp500_panel.parquet`) for the RankAlpha
+  cross-sectional model. See [ROADMAP.md](ROADMAP.md) and [CONCEPT.md](CONCEPT.md).
+
+> ⚠️ **SURVIVORSHIP BIAS (known v1 limitation).** The S&P 500 panel uses the **current**
+> index membership applied across the entire history. Companies that were dropped or
+> delisted over the lookback window are silently excluded, which biases any backtest
+> **upward** (we only keep the survivors). This is accepted for v1 and will be fixed later
+> with **point-in-time constituents** (true index membership as of each historical date).
 
 ### Layer 2: Signals (`/signals`)
 - Trains an **XGBoost** classifier on years of historical data
