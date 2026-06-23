@@ -18,6 +18,7 @@ same prompt, same guardrails. Not built here.
 
 import json
 import logging
+import os
 
 import requests
 
@@ -92,10 +93,16 @@ def _trim_to_sentence(text: str) -> str:
 def explain(portfolio: dict, timeout: float = 150.0) -> dict:
     """Return {'text': summary, 'source': 'ollama'|'template'}. Never raises.
 
-    timeout is generous because phi3:mini on CPU has a slow cold start; generation is
-    bounded with num_predict and the model is kept warm for the session.
+    The deterministic TEMPLATE is the default — it is equally factual and instant, so the
+    app never hangs on a RAM-starved box. The local LLM path is opt-in: set USE_LLM=1 to
+    call Ollama (phi3:mini). timeout is generous because phi3:mini on CPU has a slow cold
+    start; generation is bounded with num_predict and the model is kept warm for the session.
     """
     facts = _facts(portfolio)
+
+    if os.environ.get("USE_LLM") != "1":
+        return {"text": _templated(facts), "source": "template"}
+
     prompt = (
         SYSTEM + "\n\nFACTS (JSON):\n" + json.dumps(facts, indent=2)
         + "\n\nWrite the explanation now."

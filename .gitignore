@@ -15,6 +15,7 @@ data/*.json
 data/*.db
 data/*.parquet
 data/*.png
+data/cache/
 
 # IDE
 .vscode/

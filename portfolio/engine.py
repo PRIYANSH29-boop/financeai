@@ -18,9 +18,11 @@ production cutoff (all labeled data up to `as_of − 21 trading days`, the same 
 then score the latest cross-section on/before `as_of`. No tuning, no new features.
 """
 
+import hashlib
 import logging
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -35,6 +37,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger("pie_engine")
 
 FIG_DIR = Path("figures")
+CACHE_DIR = Path("data/cache")          # gitignored; persists the fitted book across runs
 DISCLAIMER = ("EDUCATIONAL SIMULATION — NOT investment advice. No real money. "
               "Backtested on survivorship-biased data; past backtest does NOT predict "
               "future returns.")
@@ -229,17 +232,39 @@ def _figures(holdings, weights, cash_w, explanations, risk_stats, amount):
 
 
 # --------------------------------------------------------------------- API
+def _cache_key(date, top_n, max_weight, *data_paths) -> str:
+    """Stable key for the score_book output: params + input-file mtimes (so the cache
+    self-invalidates when the underlying data changes)."""
+    parts = [str(date), str(top_n), str(max_weight)]
+    for p in data_paths:
+        pth = Path(p)
+        parts.append(f"{p}:{pth.stat().st_mtime_ns if pth.exists() else 0}")
+    return hashlib.md5("|".join(parts).encode()).hexdigest()[:16]
+
+
 def score_book(date=None, top_n=50, max_weight=0.08,
                features_path="data/sp500_features.parquet",
                labeled_path="data/sp500_labeled.parquet",
                panel_path="data/sp500_panel.parquet",
-               tickers_path="data/sp500_tickers.csv"):
+               tickers_path="data/sp500_tickers.csv",
+               use_cache=True):
     """Expensive, target-vol-INDEPENDENT half: fit the frozen model, pick the long book,
     cap weights, estimate book vol, build explanations + base risk stats.
 
     Cache this (it does not depend on amount or target_vol) so the risk slider — which
     only changes vol-target scaling — stays instant. `vol_target_scale_k`/cash come later.
+
+    The fitted result is also persisted to disk via joblib (`data/cache/`), so a fresh
+    `streamlit run` LOADS the book in milliseconds instead of refitting the model.
     """
+    if use_cache:
+        key = _cache_key(date, top_n, max_weight, features_path, labeled_path,
+                         panel_path, tickers_path)
+        cache_file = CACHE_DIR / f"score_book_{key}.joblib"
+        if cache_file.exists():
+            logger.info("Loading cached book from %s (no refit)", cache_file)
+            return joblib.load(cache_file)
+
     feats = pd.read_parquet(features_path); feats["date"] = pd.to_datetime(feats["date"])
     labeled = pd.read_parquet(labeled_path); labeled["date"] = pd.to_datetime(labeled["date"])
     panel = pd.read_parquet(panel_path); panel["date"] = pd.to_datetime(panel["date"])
@@ -263,7 +288,7 @@ def score_book(date=None, top_n=50, max_weight=0.08,
 
     risk_base = _oos_long_only_stats(labeled)
 
-    return {
+    out = {
         "as_of": str(pd.Timestamp(as_of).date()),
         "holdings": holdings,
         "capped": capped,                 # fully-invested fractional weights (sum=1)
@@ -271,6 +296,13 @@ def score_book(date=None, top_n=50, max_weight=0.08,
         "explanations": explanations,
         "risk_base": risk_base,
     }
+
+    if use_cache:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        joblib.dump(out, cache_file)
+        logger.info("Cached fitted book to %s", cache_file)
+
+    return out
 
 
 def cash_fraction(book_vol: float, target_vol: float) -> float:
