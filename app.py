@@ -14,6 +14,7 @@ import streamlit as st
 
 from portfolio.engine import score_book, finalize_portfolio, cash_fraction
 from portfolio.llm_explainer import explain
+from portfolio.paper_trade import load_track, compute_stats
 
 st.set_page_config(page_title="RankAlpha (demo)", page_icon="📊", layout="wide")
 
@@ -31,14 +32,8 @@ def get_book(top_n=50, max_weight=0.08):
     return score_book(top_n=top_n, max_weight=max_weight)
 
 
-def main():
-    st.title("📊 RankAlpha — transparent portfolio builder")
-    st.error(DISCLAIMER)   # unmissable, top of page, red banner
-    st.caption("A frozen LightGBM cross-sectional ranker picks the S&P 500 long book; "
-               "sizing is inverse-volatility, position-capped, and volatility-targeted. "
-               "Every holding explains itself. This is a methodology demo, not a product.")
-
-    book = get_book()
+def render_builder(book):
+    """Tab 1 — build a fresh pie for an amount + risk level (uses the cached book)."""
     book_vol = book["book_vol"]
 
     # ---- Inputs ----
@@ -116,6 +111,59 @@ def main():
 
     with st.expander("Per-holding factor exposures (heatmap)"):
         st.image(p["figures"]["factors"], use_container_width=True)
+
+
+def render_track():
+    """Tab 2 — REALIZED, out-of-sample paper-trading track record (reads the ledger only;
+    no model fit). The ledger is built/refreshed offline via `python -m portfolio.paper_trade`."""
+    st.subheader("📈 Live paper-trading track record")
+    pf, _ = load_track()
+    if pf is None or not len(pf):
+        st.info("No track record yet. Build it offline with "
+                "`python -m portfolio.paper_trade` (one model fit, then it marks each "
+                "month to realized returns).")
+        return
+
+    s = compute_stats(pf)
+    b, bm = s["book"], s["benchmark"]
+    st.caption(f"Model **frozen on {s['freeze_date']}** and never refit. Every month below "
+               f"is **out-of-sample** — the ranker had not seen it. This is a *realized* "
+               f"forward record, **not** the in-sample backtest and **not** a forecast.")
+
+    if s["is_short_sample"]:
+        st.warning(f"⚠️ Only **{s['n_months']} months** of out-of-sample paper trading — "
+                   "too short to be statistically meaningful yet. Don't read a Sharpe into "
+                   "this. The track grows by one month per real month elapsed.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Annualized return", f"{b['ann_return']*100:+.1f}%",
+              f"{s['excess_ann_return']*100:+.1f}% vs eq-wt", delta_color="off")
+    c2.metric("Annualized vol (realized)", f"{b['ann_vol']*100:.1f}%")
+    c3.metric("Max drawdown", f"{b['max_drawdown']*100:.1f}%")
+    c4.metric("Hit rate (months up)", f"{b['hit_rate']*100:.0f}%")
+    st.caption(f"Sharpe (rf=0) **{b['sharpe']:.2f}** vs equal-weight universe "
+               f"**{bm['sharpe']:.2f}** · {s['n_months']} monthly rebalances "
+               f"({s['inception']} → {s['latest']}).")
+
+    st.image("figures/paper_track_equity.png", use_container_width=True)
+    with st.expander("Honest stats card (book vs equal-weight benchmark)"):
+        st.image("figures/paper_track_stats.png", use_container_width=True)
+
+
+def main():
+    st.title("📊 RankAlpha — transparent portfolio builder")
+    st.error(DISCLAIMER)   # unmissable, top of page, red banner
+    st.caption("A frozen LightGBM cross-sectional ranker picks the S&P 500 long book; "
+               "sizing is inverse-volatility, position-capped, and volatility-targeted. "
+               "Every holding explains itself. This is a methodology demo, not a product.")
+
+    book = get_book()
+
+    tab_build, tab_track = st.tabs(["🥧 Build a pie", "📈 Track record"])
+    with tab_build:
+        render_builder(book)
+    with tab_track:
+        render_track()
 
     st.divider()
     st.error(DISCLAIMER)   # repeat at the bottom — unmissable

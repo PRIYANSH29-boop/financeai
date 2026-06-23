@@ -6,7 +6,7 @@ money, and NO fabricated return probabilities. Past backtest ≠ future returns.
 
 Public API
 ----------
-    build_portfolio(amount, date=None, top_n=50, target_vol=0.10, max_weight=0.08)
+    build_portfolio(amount, date=None, top_n=50, target_vol=0.14, max_weight=0.08)
         -> {as_of, weights, dollar_allocations, explanations, risk_stats, figures}
 
 This is what the Phase 9 product page calls. The L/S research backtest
@@ -344,7 +344,7 @@ def finalize_portfolio(book: dict, amount: float, target_vol: float = 0.14,
     }
 
 
-def build_portfolio(amount, date=None, top_n=50, target_vol=0.10, max_weight=0.08,
+def build_portfolio(amount, date=None, top_n=50, target_vol=0.14, max_weight=0.08,
                     **paths):
     """Full pipeline (score_book + finalize_portfolio). Same return shape as before."""
     book = score_book(date=date, top_n=top_n, max_weight=max_weight, **paths)
