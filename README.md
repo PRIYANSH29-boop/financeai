@@ -65,6 +65,54 @@ A production-grade financial analysis engine that combines live market data, cla
 > **upward** (we only keep the survivors). This is accepted for v1 and will be fixed later
 > with **point-in-time constituents** (true index membership as of each historical date).
 
+---
+
+## RankAlpha — cross-sectional momentum ranker + demo product
+
+A market-neutral **learning-to-rank** system over the S&P 500: a LightGBM LambdaMART model
+scores the cross-section each month; the research backtest trades the tails long/short, and a
+long-only **demo product** turns the scores into a transparent, risk-managed "pie." Full
+methodology in [CONCEPT.md](CONCEPT.md) and [ROADMAP.md](ROADMAP.md); the honest write-up of
+what it can and cannot claim is in [LIMITATIONS.md](LIMITATIONS.md).
+
+Pipeline (`utils/` data → `signals/` model → `portfolio/` product):
+- `utils/sp500_data.py` → panel · `utils/sp500_features.py` → 7 point-in-time rank features ·
+  `utils/sp500_labels.py` → forward-return rank/decile labels (21-day horizon).
+- `signals/baseline_momentum.py` → no-ML 12-1 momentum baseline · `signals/lgbm_ranker.py` →
+  walk-forward ranker (21-day embargo) · `signals/evaluate.py` → honest evaluation.
+- `portfolio/engine.py` → `build_portfolio()` (long-only, inverse-vol + position-cap +
+  volatility-target) · `portfolio/llm_explainer.py` → plain-English explainer.
+
+**Headline (out-of-sample 2022–2026, after 10 bps/side):** model Sharpe **1.14** vs momentum
+baseline **0.82**; Rank IC **0.050** vs 0.041; edge survives costs to 30 bps. The model's
+dominant feature is **6-month volatility** by importance — and per-holding SHAP shows the long
+book tilts to **higher-volatility** names (importance ≠ direction; it is *not* a low-vol tilt).
+
+### Run the demo product (Streamlit)
+
+```bash
+streamlit run app.py
+```
+
+Enter an amount and a risk level (**Conservative ≈ 10% vol / Balanced ≈ 14% / Aggressive ≈
+20%**); the page shows the allocation pie, a self-explaining holdings table, an honest
+(historical, not forecast) risk panel, and a plain-English summary. The risk slider updates
+the **invested-vs-cash** split live (higher target → more invested, never levered).
+
+- **Local LLM explainer:** uses **Ollama `phi3:mini`** if running (`ollama serve` +
+  `ollama pull phi3:mini`); otherwise it falls back to a deterministic templated summary, so
+  the app runs with no LLM. The explainer is fed **only** the model's real factor/SHAP
+  reasons + stats and is instructed never to predict, advise, or invent numbers. Note:
+  `phi3:mini` on a CPU/low-RAM laptop is slow (~1 tok/s), so the app uses a 150 s budget and
+  will often show the (equally factual) template; the local-LLM path is proven to work given
+  more time or better hardware.
+- **Deploy notes:** the first build fits the frozen model (~1–2 min, cached for the session).
+  A **free cloud host cannot run a local LLM** — a hosted version would swap Ollama for
+  **Groq** (same prompt, same no-invent guardrail); not built yet.
+
+> ⚠️ **EDUCATIONAL SIMULATION — NOT investment advice. No real money. Past backtest does not
+> predict future returns.** The pie is a methodology demo on survivorship-biased data.
+
 ### Layer 2: Signals (`/signals`)
 - Trains an **XGBoost** classifier on years of historical data
 - Uses **walk-forward validation** to prevent look-ahead bias — no data leakage

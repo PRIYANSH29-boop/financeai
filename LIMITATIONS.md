@@ -48,12 +48,16 @@ average. The model **reduced** the momentum-crash contamination in the short leg
 was +1.68%) but did **not** eliminate it. Most of the alpha is long-side; a long-only or
 long-tilted version may be the more honest product.
 
-## 8. The model leans on volatility, not momentum
+## 8. The model leans on the volatility factor (importance ≠ direction)
 Feature importance (LightGBM gain and SHAP agree): **`vol_6m_rank` ≈ 60%**, `size_rank` ≈ 14%,
-`mom_12_1m` only ≈ 10%. The ranker beats the momentum baseline largely by discovering the
-**low-volatility / size** effects, not by doing momentum better. This is a feature (genuine
-multi-factor blend, not re-derived momentum) but also a caveat: the result rides heavily on
-the volatility factor, which is itself crowded and regime-dependent.
+`mom_12_1m` only ≈ 10%. So `vol_6m` is by far the dominant feature — the ranker beats the
+momentum baseline largely by using **volatility and size**, not by doing momentum better
+(a genuine multi-factor blend, not re-derived momentum).
+**Important caveat on direction:** importance is not direction. Per-holding SHAP on the long
+(top-decile) book shows it tilts toward **high-`vol_6m_rank`** names (typically paired with
+strong momentum) — i.e. the long picks are higher-volatility, *not* the classic low-volatility
+anomaly. An earlier draft mislabelled this as a "low-volatility effect"; corrected. The result
+rides heavily on the volatility factor, which is crowded and regime-dependent either way.
 
 ## 9. Other
 - Daily-bar `fwd_ret_1m` uses a per-ticker 21-row shift; tickers with missing days have a
@@ -68,7 +72,7 @@ no momentum crash, a frozen LightGBM LambdaMART ranker on 7 price-based factors 
 12-1 momentum baseline on the same window** (after-cost Sharpe 1.14 vs 0.82; Rank IC 0.050 vs
 0.041), with a more monotonic decile spread and an improved (not fixed) short leg, and the
 edge **survived costs up to 30 bps/side**. The improvement is interpretable: the model blends
-a dominant low-volatility signal with size and momentum.
+a dominant volatility signal (the long book tilts high-vol, paired with momentum) with size.
 
 ## What we CANNOT claim
 That this is a deployable, profitable strategy. The absolute returns are survivorship-inflated,

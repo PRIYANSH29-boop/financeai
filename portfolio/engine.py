@@ -41,7 +41,7 @@ DISCLAIMER = ("EDUCATIONAL SIMULATION — NOT investment advice. No real money. 
 
 # Human-readable factor descriptions for the self-explanation layer.
 FACTOR_DESC = {
-    "vol_6m_rank": "6-month volatility (low-vol factor)",
+    "vol_6m_rank": "6-month volatility",
     "size_rank": "size proxy (log price)",
     "mom_12_1m_rank": "12-1 month momentum",
     "mom_6m_rank": "6-month momentum",
@@ -229,11 +229,17 @@ def _figures(holdings, weights, cash_w, explanations, risk_stats, amount):
 
 
 # --------------------------------------------------------------------- API
-def build_portfolio(amount, date=None, top_n=50, target_vol=0.10, max_weight=0.08,
-                    features_path="data/sp500_features.parquet",
-                    labeled_path="data/sp500_labeled.parquet",
-                    panel_path="data/sp500_panel.parquet",
-                    tickers_path="data/sp500_tickers.csv"):
+def score_book(date=None, top_n=50, max_weight=0.08,
+               features_path="data/sp500_features.parquet",
+               labeled_path="data/sp500_labeled.parquet",
+               panel_path="data/sp500_panel.parquet",
+               tickers_path="data/sp500_tickers.csv"):
+    """Expensive, target-vol-INDEPENDENT half: fit the frozen model, pick the long book,
+    cap weights, estimate book vol, build explanations + base risk stats.
+
+    Cache this (it does not depend on amount or target_vol) so the risk slider — which
+    only changes vol-target scaling — stays instant. `vol_target_scale_k`/cash come later.
+    """
     feats = pd.read_parquet(features_path); feats["date"] = pd.to_datetime(feats["date"])
     labeled = pd.read_parquet(labeled_path); labeled["date"] = pd.to_datetime(labeled["date"])
     panel = pd.read_parquet(panel_path); panel["date"] = pd.to_datetime(panel["date"])
@@ -246,12 +252,37 @@ def build_portfolio(amount, date=None, top_n=50, target_vol=0.10, max_weight=0.0
     logger.info("Selected top %d of %d names (long-only) as of %s",
                 len(holdings), len(ranked), pd.Timestamp(as_of).date())
 
-    # Inverse-vol base weights -> position cap -> vol target (hold cash if needed).
     inv = 1.0 / holdings["vol_6m"]
     base = pd.Series((inv / inv.sum()).values, index=holdings["ticker"].values)
     capped = _cap_weights(base, max_weight)
-
     book_vol = _book_vol(capped.index, capped, panel, as_of)
+
+    explanations = _explain(model, holdings)
+    for tk in explanations:
+        explanations[tk]["sector"] = str(meta.loc[tk, "sector"]) if tk in meta.index else "?"
+
+    risk_base = _oos_long_only_stats(labeled)
+
+    return {
+        "as_of": str(pd.Timestamp(as_of).date()),
+        "holdings": holdings,
+        "capped": capped,                 # fully-invested fractional weights (sum=1)
+        "book_vol": float(book_vol),
+        "explanations": explanations,
+        "risk_base": risk_base,
+    }
+
+
+def cash_fraction(book_vol: float, target_vol: float) -> float:
+    """Instant: cash fraction the vol-target implies (never levers). For the live slider."""
+    k = min(1.0, target_vol / book_vol) if book_vol > 0 else 1.0
+    return float(1.0 - k)
+
+
+def finalize_portfolio(book: dict, amount: float, target_vol: float = 0.14,
+                       make_figures: bool = True) -> dict:
+    """Cheap, target-vol-DEPENDENT half: apply vol-target scaling -> dollars -> figures."""
+    capped, book_vol = book["capped"], book["book_vol"]
     k = min(1.0, target_vol / book_vol) if book_vol > 0 else 1.0
     weights = (capped * k).sort_values(ascending=False)
     cash_w = float(1.0 - weights.sum())
@@ -259,28 +290,33 @@ def build_portfolio(amount, date=None, top_n=50, target_vol=0.10, max_weight=0.0
     dollar_alloc = (weights * amount).round(2).to_dict()
     dollar_alloc["CASH"] = round(cash_w * amount, 2)
 
-    explanations = _explain(model, holdings)
-    for tk in explanations:
-        explanations[tk]["sector"] = str(meta.loc[tk, "sector"]) if tk in meta.index else "?"
-
-    risk = _oos_long_only_stats(labeled)
+    risk = dict(book["risk_base"])
     risk["target_vol"] = target_vol
     risk["estimated_book_vol_preTarget"] = round(book_vol, 4)
     risk["vol_target_scale_k"] = round(k, 3)
+    risk["invested_fraction"] = round(float(weights.sum()), 4)
     risk["disclaimer"] = DISCLAIMER
 
-    figures = _figures(holdings, weights, cash_w, explanations, risk, amount)
+    figures = (_figures(book["holdings"], weights, cash_w, book["explanations"], risk, amount)
+               if make_figures else {})
 
     return {
-        "as_of": str(pd.Timestamp(as_of).date()),
+        "as_of": book["as_of"],
         "amount": amount,
         "weights": weights.round(4).to_dict(),
         "cash_weight": round(cash_w, 4),
         "dollar_allocations": dollar_alloc,
-        "explanations": explanations,
+        "explanations": book["explanations"],
         "risk_stats": risk,
         "figures": figures,
     }
+
+
+def build_portfolio(amount, date=None, top_n=50, target_vol=0.10, max_weight=0.08,
+                    **paths):
+    """Full pipeline (score_book + finalize_portfolio). Same return shape as before."""
+    book = score_book(date=date, top_n=top_n, max_weight=max_weight, **paths)
+    return finalize_portfolio(book, amount, target_vol)
 
 
 def _demo():
