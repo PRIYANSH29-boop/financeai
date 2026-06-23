@@ -8,7 +8,7 @@ price/direction predictor.
 
 **v1 = Phases 1–6. Each phase gates the next. No skipping ahead.**
 
-> **Status (2026-06-23): Phases 1–9 complete ✅. Phase 10 (ship) remaining.**
+> **Status (2026-06-23): Phases 1–10 complete ✅. v1 shipped.**
 
 1. **Data** — daily prices for the S&P 500 universe, ~7 years. Survivorship: v1 uses
    *current* constituents + a documented caveat. **Done when:** clean panel dataset saved.
@@ -34,7 +34,9 @@ price/direction predictor.
 9. ✅ Streamlit dashboard + live paper-trading track record — model frozen 2024-05-15, traded
    forward (single frozen model, never refit), marked to realized returns; idempotent
    `update_track`, "Track record" tab. Accepted 2026-06-23.
-10. Ship (README, methodology, demo, applications) — **remaining.**
+10. ✅ Ship — honest README rewrite (accurate architecture, headline numbers, embedded
+    figures, quickstart), `requirements.txt`, MIT `LICENSE`, and removal of the aspirational
+    legacy scaffold (XGBoost/RAG/Telegram stubs that nothing imported). Done 2026-06-23.
 
 **Phase 6 experiment backlog (banked, build v1 first):**
 
