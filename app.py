@@ -53,7 +53,7 @@ def render_builder(book):
                    f"annualized volatility. To hit your {target_vol*100:.0f}% target we "
                    f"hold {cash_pct:.0f}% cash (we never use leverage). More risk → more "
                    f"invested, less cash.")
-        go = st.button("Build my pie", type="primary", use_container_width=True)
+        go = st.button("Build my pie", type="primary", width="stretch")
 
     if not go:
         st.info("Set an amount and risk level, then **Build my pie**.")
@@ -81,7 +81,7 @@ def render_builder(book):
     c1, c2 = st.columns([3, 2])
     with c1:
         st.subheader(f"Allocation — ${amount:,.0f} as of {p['as_of']}")
-        st.image(p["figures"]["pie"], use_container_width=True)
+        st.image(p["figures"]["pie"], width="stretch")
     with c2:
         st.subheader("Honest risk panel")
         st.caption("Backtested on the long-only book, 2022–2026 out-of-sample.")
@@ -107,10 +107,10 @@ def render_builder(book):
     rows.append({"Ticker": "CASH", "$ Allocation": f"${p['dollar_allocations']['CASH']:,.0f}",
                  "Weight": f"{p['cash_weight']*100:.1f}%", "Sector": "—",
                  "Why it's in the pie": "Volatility-target buffer (no leverage)"})
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
     with st.expander("Per-holding factor exposures (heatmap)"):
-        st.image(p["figures"]["factors"], use_container_width=True)
+        st.image(p["figures"]["factors"], width="stretch")
 
 
 def render_track():
@@ -145,9 +145,9 @@ def render_track():
                f"**{bm['sharpe']:.2f}** · {s['n_months']} monthly rebalances "
                f"({s['inception']} → {s['latest']}).")
 
-    st.image("figures/paper_track_equity.png", use_container_width=True)
+    st.image("figures/paper_track_equity.png", width="stretch")
     with st.expander("Honest stats card (book vs equal-weight benchmark)"):
-        st.image("figures/paper_track_stats.png", use_container_width=True)
+        st.image("figures/paper_track_stats.png", width="stretch")
 
 
 def main():
