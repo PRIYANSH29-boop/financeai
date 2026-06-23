@@ -1,261 +1,193 @@
+# RankAlpha
 
-# Finance AI System
+**A transparent, leakage-controlled cross-sectional equity ranker for the S&P 500 — with an
+honest, self-explaining portfolio product on top.** A LightGBM LambdaMART model ranks the
+cross-section each month; a research backtest trades the tails long/short; and a long-only
+**demo product** turns the scores into a risk-managed "pie" that explains every holding. Runs
+on a single Linux laptop — no cloud required.
 
-A production-grade financial analysis engine that combines live market data, classical ML, and large language models to produce structured, explainable stock analysis. Built to run on a single Linux machine — no cloud dependencies required.
-
-> This is not a toy demo. It follows the architecture of production AI systems used in fintech and quant funds, scaled down to one machine.
+> ⚠️ **EDUCATIONAL SIMULATION — NOT investment advice. No real money. Past results do NOT
+> predict future returns.** Backtested on a survivorship-biased universe. This is a
+> *methodology demonstration*, not a deployable strategy. Read [LIMITATIONS.md](LIMITATIONS.md)
+> before trusting any number below.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)
-![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat&logo=pytorch&logoColor=white)
-![XGBoost](https://img.shields.io/badge/XGBoost-337AB7?style=flat)
-![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=flat)
+![LightGBM](https://img.shields.io/badge/LightGBM-LambdaMART-2ca02c?style=flat)
+![SHAP](https://img.shields.io/badge/SHAP-explainability-9467bd?style=flat)
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 
 ---
 
-## Architecture
+## What it is
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     FINANCE AI SYSTEM                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌─────────────┐ │
-│  │   DATA   │──▶│ SIGNALS  │──▶│   RISK   │──▶│  LLM BRAIN  │ │
-│  │  LAYER   │   │  LAYER   │   │  ENGINE  │   │  (RAG/LLM)  │ │
-│  └──────────┘   └──────────┘   └──────────┘   └──────┬──────┘ │
-│       │              │              │                 │         │
-│  Live prices    XGBoost +       Kelly          Phi-3 / Llama   │
-│  Indicators     SHAP            Criterion      3.3 70B         │
-│  Fundamentals   Walk-forward    Confidence     Cites sources   │
-│  Validation     validation      thresholds     Never halluci-  │
-│                                 Drawdown       nates           │
-│                                 protection                     │
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    INTERFACE LAYER                          ││
-│  │         Streamlit Dashboard  +  Telegram Bot                ││
-│  └─────────────────────────────────────────────────────────────┘│
-│                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │                  SELF-EVALUATION LOOP                       ││
-│  │    Logs every prediction → Checks if past calls correct     ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
-```
+RankAlpha treats ML as a **scoring function for ranking**, not a price/direction predictor. The
+model learns to order the S&P 500 cross-section by forward-return rank each month; the portfolio
+is built from those ranks with classical, transparent rules (inverse-volatility sizing, position
+caps, volatility targeting). The selling point is **honesty**: leakage-controlled validation,
+SHAP reasons on every holding, a risk panel that shows historical ranges (never forecasts), and
+a forward paper-trading track kept strictly separate from the in-sample backtest.
 
----
+## Headline results
 
-## The 5 layers
+**Research backtest** — out-of-sample 2022-06 → 2026-05, after 10 bps/side, 47 monthly rebalances:
 
-### Layer 1: Data (`/utils`)
-- Pulls live stock prices from **yfinance**
-- Computes technical indicators: RSI, MACD, Bollinger Bands, moving averages, volume ratios
-- Fetches fundamentals: P/E, debt-to-equity, margins, growth rates
-- Validates all data for anomalies and missing values
-- Outputs clean, structured datasets ready for modelling
-- **S&P 500 panel** (`utils/sp500_data.py`): scrapes current constituents and builds a
-  tidy ~7-year daily OHLCV panel (`data/sp500_panel.parquet`) for the RankAlpha
-  cross-sectional model. See [ROADMAP.md](ROADMAP.md) and [CONCEPT.md](CONCEPT.md).
+| Metric | LightGBM ranker | 12-1 momentum baseline |
+|---|---|---|
+| After-cost Sharpe | **1.14** | 0.82 |
+| Mean Rank IC | **0.050** (t = 1.64) | 0.041 |
+| Edge survives costs to | **30 bps/side** | — |
 
-> ⚠️ **SURVIVORSHIP BIAS (known v1 limitation).** The S&P 500 panel uses the **current**
-> index membership applied across the entire history. Companies that were dropped or
-> delisted over the lookback window are silently excluded, which biases any backtest
-> **upward** (we only keep the survivors). This is accepted for v1 and will be fixed later
-> with **point-in-time constituents** (true index membership as of each historical date).
+The ranker's dominant feature is **6-month volatility** (~60% importance; SHAP agrees), blended
+with size — a genuine multi-factor edge, not re-derived momentum. Per-holding SHAP shows the long
+book tilts toward **higher-volatility** names (importance ≠ direction — this is *not* a low-vol
+anomaly).
 
----
+**Forward paper-trading track** — model frozen 2024-05-15, traded forward 23 months (never refit):
 
-## RankAlpha — cross-sectional momentum ranker + demo product
+| | Paper book | Equal-weight universe |
+|---|---|---|
+| Annualized return | +19.0% | +17.7% |
+| Annualized vol (realized) | 14.8% | 14.3% |
+| Sharpe (rf=0) | 1.25 | 1.21 |
+| Max drawdown | −15.0% | −10.8% |
 
-A market-neutral **learning-to-rank** system over the S&P 500: a LightGBM LambdaMART model
-scores the cross-section each month; the research backtest trades the tails long/short, and a
-long-only **demo product** turns the scores into a transparent, risk-managed "pie." Full
-methodology in [CONCEPT.md](CONCEPT.md) and [ROADMAP.md](ROADMAP.md); the honest write-up of
-what it can and cannot claim is in [LIMITATIONS.md](LIMITATIONS.md).
+A modest, honest edge — explicitly flagged as **too short (23 months) to be statistically
+meaningful**. ⚠️ All absolute levels are **survivorship-inflated**; the *relative* (model vs
+baseline / benchmark, same universe) comparison is the trustworthy one. Full caveats:
+[LIMITATIONS.md](LIMITATIONS.md).
 
-Pipeline (`utils/` data → `signals/` model → `portfolio/` product):
-- `utils/sp500_data.py` → panel · `utils/sp500_features.py` → 7 point-in-time rank features ·
-  `utils/sp500_labels.py` → forward-return rank/decile labels (21-day horizon).
-- `signals/baseline_momentum.py` → no-ML 12-1 momentum baseline · `signals/lgbm_ranker.py` →
-  walk-forward ranker (21-day embargo) · `signals/evaluate.py` → honest evaluation.
-- `portfolio/engine.py` → `build_portfolio()` (long-only, inverse-vol + position-cap +
-  volatility-target) · `portfolio/llm_explainer.py` → plain-English explainer.
-
-**Headline (out-of-sample 2022–2026, after 10 bps/side):** model Sharpe **1.14** vs momentum
-baseline **0.82**; Rank IC **0.050** vs 0.041; edge survives costs to 30 bps. The model's
-dominant feature is **6-month volatility** by importance — and per-holding SHAP shows the long
-book tilts to **higher-volatility** names (importance ≠ direction; it is *not* a low-vol tilt).
-
-### Run the demo product (Streamlit)
+## The demo product
 
 ```bash
 streamlit run app.py
 ```
 
-Enter an amount and a risk level (**Conservative ≈ 10% vol / Balanced ≈ 14% / Aggressive ≈
-20%**); the page shows the allocation pie, a self-explaining holdings table, an honest
-(historical, not forecast) risk panel, and a plain-English summary. The risk slider updates
-the **invested-vs-cash** split live (higher target → more invested, never levered).
+Enter an amount and a risk level (**Conservative ≈ 10% vol / Balanced ≈ 14% / Aggressive ≈ 20%**).
+The risk slider updates the **invested-vs-cash** split live (higher target → more invested, never
+levered). Two tabs: **Build a pie** and the forward **Track record**.
 
-- **Local LLM explainer (opt-in):** by default the explainer returns a **deterministic
-  templated summary** (instant, equally factual) so the app never hangs on a low-RAM box. To
-  use the local LLM, set **`USE_LLM=1`** with **Ollama `phi3:mini`** running (`ollama serve` +
-  `ollama pull phi3:mini`). The explainer is fed **only** the model's real factor/SHAP reasons
-  + stats and is instructed never to predict, advise, or invent numbers. Note: `phi3:mini` on
-  a CPU/low-RAM laptop is slow (~1 tok/s), so the app uses a 150 s budget and falls back to the
-  template; the local-LLM path is proven to work given more time or better hardware.
-- **Speed:** the fitted book is cached to disk (`joblib`, under `data/cache/`), so only the
-  *first* run fits the frozen model (~80 s); every run afterwards loads it in ~1 s and renders
-  a full pie in a few seconds.
-- **Deploy notes:** a **free cloud host cannot run a local LLM** — a hosted version would swap
-  Ollama for **Groq** (same prompt, same no-invent guardrail); not built yet.
+| Allocation pie | Per-holding factor exposures | Honest risk panel |
+|---|---|---|
+| ![pie](figures/portfolio_pie.png) | ![factors](figures/portfolio_factors.png) | ![risk](figures/portfolio_risk.png) |
 
-#### Paper-trading track record (Phase 9)
+**Paper-trading track record** (realized, out-of-sample — *not* the backtest, *not* a forecast):
 
-The **Track record** tab shows a *realized, out-of-sample* forward paper-trade: the ranker is
-**frozen once** on data up to `2024-05-15` and then traded forward (monthly, never refit) on
-data it has never seen — the honest analogue of shipping a model and watching it live. Build or
-refresh the ledger offline:
+![track](figures/paper_track_equity.png)
 
-```bash
-python -m portfolio.paper_trade        # one model fit, then marks each month to realized returns
+- **Local LLM explainer (opt-in):** by default the holdings explanation is a **deterministic
+  template** (instant, equally factual) so the app never hangs on a low-RAM box. Set **`USE_LLM=1`**
+  with **Ollama `phi3:mini`** running (`ollama serve` + `ollama pull phi3:mini`) to use the local
+  model. It is fed **only** the model's real factor/SHAP reasons + stats and is instructed never to
+  predict, advise, or invent numbers; a hosted deploy would swap Ollama for **Groq** (same prompt,
+  same guardrail).
+- **Speed:** the fitted book is cached to disk (`joblib`, `data/cache/`), so only the *first* run
+  fits the model (~80 s); every run after loads in ~1 s.
+
+## How it works
+
+```
+utils/  (data)            signals/  (model)                portfolio/  (product)
+─────────────────         ────────────────────────         ──────────────────────────
+sp500_data.py     ──▶  baseline_momentum.py  ──┐      ┌─▶ engine.py        build_portfolio()
+  S&P500 panel          no-ML 12-1 momentum     │      │     long-only, inverse-vol,
+sp500_features.py       (the bar to beat)       │      │     position-cap, vol-target
+  7 PIT rank feats   lgbm_ranker.py  ───────────┼──────┤  llm_explainer.py  plain-English
+sp500_labels.py         LambdaMART, walk-forward│      │     (template / opt-in Ollama)
+  fwd-return ranks      + 21d embargo           │      └─▶ paper_trade.py   frozen-model
+                     evaluate.py  ──────────────┘            forward track (update_track)
+                        honest OOS eval
 ```
 
-`update_track()` is **idempotent** (re-running adds only newly-due months); the ledger lives in
-gitignored `data/paper_track_*.parquet` and the figures (`figures/paper_track_*.png`) are
-generated by repo code. This track is kept **separate from the in-sample backtest** and carries
-a loud small-sample caveat — at ~23 months it is **not yet statistically meaningful**.
+- **Data** — `utils/sp500_data.py` builds a ~7-year daily OHLCV panel of current constituents;
+  `sp500_features.py` computes 7 point-in-time, within-day rank features (3/6/12-month return,
+  1-month reversal, 6-month vol, liquidity surge, size proxy); `sp500_labels.py` makes
+  forward-return rank/decile labels (21-day horizon).
+- **Signals** — `baseline_momentum.py` is the no-ML 12-1 momentum baseline the model must beat.
+  `lgbm_ranker.py` trains an `LGBMRanker` (LambdaMART) with **expanding-window walk-forward
+  validation and a 21-day embargo** — no shuffling, no global fit, no leakage. `evaluate.py` is
+  the honest OOS evaluation (Rank IC, decile monotonicity, after-cost Sharpe, drawdown vs baseline).
+- **Portfolio** — `engine.py` turns frozen-model scores into the long-only product book.
+  `paper_trade.py` freezes the model once and trades it forward, marking to realized returns.
 
-> ⚠️ **EDUCATIONAL SIMULATION — NOT investment advice. No real money. Past backtest does not
-> predict future returns.** The pie is a methodology demo on survivorship-biased data.
+## Quickstart
 
-### Layer 2: Signals (`/signals`)
-- Trains an **XGBoost** classifier on years of historical data
-- Uses **walk-forward validation** to prevent look-ahead bias — no data leakage
-- Outputs a probability score (not just up/down) with calibrated confidence
-- **SHAP explainability** on every prediction — shows exactly which features drove the decision
-- Tracks feature importance drift over time
+```bash
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
 
-### Layer 3: Risk (`/risk`)
-- Applies **Kelly Criterion** for mathematically optimal position sizing
-- Enforces **confidence thresholds** — the system refuses to act when uncertain
-- Drawdown protection — automatically reduces exposure during losing streaks
-- Separates signal quality from position size — a good signal with low confidence = small position
+# 1) Build the dataset (downloads prices; data/ is gitignored and regenerated locally)
+python -m utils.sp500_data        # → data/sp500_panel.parquet
+python -m utils.sp500_features    # → data/sp500_features.parquet
+python -m utils.sp500_labels      # → data/sp500_labeled.parquet
 
-### Layer 4: LLM Brain (`/llm`)
-- Uses **local Phi-3** via Ollama or **cloud Llama 3.3 70B** via Groq's free API
-- Receives all signals as **structured context through a RAG pipeline**
-- Produces analyst-grade reasoning that **cites every number**
-- Never hallucinating — the LLM only reasons over data it actually received
-- Never gives buy/sell advice — provides analysis, not recommendations
+# 2) Reproduce the research results
+python -m signals.baseline_momentum   # no-ML baseline
+python -m signals.lgbm_ranker         # ranker vs baseline (walk-forward)
+python -m signals.evaluate            # honest OOS evaluation
 
-### Layer 5: Interface (`/interface`)
-- **Streamlit dashboard** — full visual interface for analysis, charts, and signals
-- **Telegram bot** — real-time alerts when significant signals are detected
-- Clean, responsive UI that surfaces the right information at the right time
+# 3) Build the forward paper-trading track record (one model fit, then idempotent)
+python -m portfolio.paper_trade
 
-### Self-Evaluation Loop
-- Logs every prediction with timestamp, confidence, and reasoning
-- Periodically checks whether past calls were directionally correct
-- Maintains a transparent track record — no hiding bad predictions
-- Uses evaluation results to flag when model retraining is needed
+# 4) Launch the demo product
+streamlit run app.py
+```
 
----
-
-## Tech stack
-
-| Category | Technologies |
-|----------|-------------|
-| **ML/AI** | Python, XGBoost, SHAP, scikit-learn, pandas, NumPy |
-| **Deep Learning** | PyTorch, LSTM (for sequence modelling) |
-| **LLM** | LangChain, Ollama (Phi-3), Groq API (Llama 3.3 70B), ChromaDB |
-| **Data** | yfinance, financial APIs, SQL |
-| **Interface** | Streamlit, python-telegram-bot, Plotly |
-| **Infrastructure** | Linux, Git, cron scheduling |
-
----
+`portfolio.paper_trade.update_track()` is **idempotent** — re-running appends only newly-due
+months. All generated data lives in gitignored `data/`; figures are committed under `figures/`.
 
 ## Project structure
 
 ```
 financeai/
-├── signals/              # ML signal generation
-│   ├── model.py          # XGBoost training + walk-forward validation
-│   ├── features.py       # Feature engineering pipeline
-│   └── explainer.py      # SHAP explainability
-├── risk/                 # Risk management engine
-│   ├── kelly.py          # Kelly Criterion position sizing
-│   ├── thresholds.py     # Confidence thresholds + drawdown protection
-│   └── portfolio.py      # Portfolio-level risk aggregation
-├── llm/                  # LLM reasoning layer
-│   ├── agent.py          # LangChain agent + RAG orchestration
-│   ├── prompts.py        # System prompts + output formatting
-│   └── rag.py            # Document embedding + retrieval
-├── interface/            # User-facing layer
-│   ├── dashboard.py      # Streamlit app
-│   └── telegram_bot.py   # Telegram alert bot
-├── utils/                # Shared utilities
-│   ├── data_pipeline.py  # Market data fetching + cleaning
-│   ├── indicators.py     # Technical indicator calculations
-│   └── validators.py     # Data quality checks
-├── .gitignore
-├── README.md
-├── requirements.txt
-└── LICENSE
+├── app.py                       # Streamlit demo product (Build-a-pie + Track-record tabs)
+├── utils/
+│   ├── sp500_data.py            # build the S&P 500 OHLCV panel
+│   ├── sp500_features.py        # 7 point-in-time within-day rank features
+│   └── sp500_labels.py          # forward-return rank / decile labels (21d)
+├── signals/
+│   ├── baseline_momentum.py     # no-ML 12-1 momentum baseline (the bar to beat)
+│   ├── lgbm_ranker.py           # LGBMRanker LambdaMART, walk-forward + 21d embargo
+│   └── evaluate.py              # honest out-of-sample evaluation
+├── portfolio/
+│   ├── engine.py                # build_portfolio(): long-only, inverse-vol, vol-target
+│   ├── llm_explainer.py         # plain-English explainer (template / opt-in Ollama)
+│   └── paper_trade.py           # frozen-model forward paper-trading track record
+├── figures/                     # committed output figures (pie, factors, risk, track)
+├── CONCEPT.md · ROADMAP.md · LIMITATIONS.md
+├── requirements.txt · LICENSE · README.md
 ```
 
----
+## Methodology & honesty
 
-## Key design decisions
-
-**Why XGBoost over deep learning for signals?**
-Gradient boosted trees outperform neural nets on structured tabular data with <100k rows. Our feature set is hand-engineered financial indicators, not raw sequences — XGBoost is the right tool. LSTM is used separately for sequence modelling where appropriate.
-
-**Why Kelly Criterion?**
-Most ML projects predict direction but never address "how much." Kelly provides a mathematically optimal answer to position sizing given your edge and confidence. The system never bets more than Kelly suggests, and often bets less.
-
-**Why does the system refuse to trade?**
-A system that always has an opinion is a dangerous system. When confidence is below threshold, the most profitable action is inaction. This design choice alone separates this from 99% of student projects.
-
-**Why RAG instead of fine-tuning the LLM?**
-Fine-tuning creates a static model. RAG lets the LLM reason over today's data — live prices, fresh news, current indicators. The LLM never answers from memory; it only answers from what it can see and cite.
-
-**Why local + cloud LLM options?**
-Phi-3 runs locally for privacy and zero cost. Llama 3.3 70B via Groq's free API provides higher quality reasoning when needed. The system works with either — no vendor lock-in.
-
----
+- **[CONCEPT.md](CONCEPT.md)** — the why: ranking vs prediction, the factor design, the thesis.
+- **[ROADMAP.md](ROADMAP.md)** — the locked, gated 10-phase plan (Phases 1–9 complete).
+- **[LIMITATIONS.md](LIMITATIONS.md)** — the honest account: survivorship bias, weak size/liquidity
+  proxies, sample too small for significance (t < 2), untested through a momentum crash,
+  long-concentrated and volatility-driven edge. **What we can and cannot claim.**
 
 ## What this project demonstrates
 
-- **Linux engineering** — runs continuously on a personal machine
-- **Financial data engineering** — live market data, indicators, fundamentals
-- **Classical ML** — XGBoost with proper temporal validation
-- **Model explainability** — SHAP on every prediction (EU AI Act compliant)
-- **Risk management** — Kelly Criterion, confidence thresholds, drawdown protection
-- **LLM integration** — RAG pipeline, structured prompting, citation enforcement
-- **Production patterns** — logging, self-evaluation, deployment, alerting
-- **Honest evaluation** — tracks past predictions, documents where the model fails
-
----
-
-## Status
-
-🟡 **In active development** — architecture complete, building each layer incrementally with daily commits.
-
----
+- **Leakage-controlled ML for finance** — expanding-window walk-forward, per-fold embargo,
+  point-in-time features, no global fit. The validation is the hard part, and it's done right.
+- **Learning-to-rank** (LambdaMART) applied to cross-sectional equity selection.
+- **Explainability end-to-end** — SHAP attributions surfaced as plain-English per-holding reasons.
+- **Honest evaluation & risk communication** — beats a real baseline on the same window, reports
+  historical ranges (never forecasts), and separates a forward paper-trade from the backtest.
+- **Pragmatic engineering** — on-disk model caching, idempotent ledger updates, a graceful
+  template fallback so the app never hangs on constrained hardware.
 
 ## Disclaimer
 
-This system is for **educational and research purposes only**. It does not provide financial advice. Past performance of the model does not indicate future results. Never make investment decisions based solely on algorithmic output.
-
----
+For **educational and research purposes only**. Not financial advice. The model's past
+(survivorship-biased, statistically insignificant) results do not indicate future results. Never
+make investment decisions based on algorithmic output.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).
 
 ---
 
-Built by [Priyansh Patel](https://github.com/PRIYANSH29-boop) — CS student in London, building at the intersection of finance and AI.
+Built by [Priyansh Patel](https://github.com/PRIYANSH29-boop) — building at the intersection of
+finance and AI.
