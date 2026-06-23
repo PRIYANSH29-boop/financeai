@@ -8,6 +8,8 @@ price/direction predictor.
 
 **v1 = Phases 1–6. Each phase gates the next. No skipping ahead.**
 
+> **Status (2026-06-23): Phases 1–9 complete ✅. Phase 10 (ship) remaining.**
+
 1. **Data** — daily prices for the S&P 500 universe, ~7 years. Survivorship: v1 uses
    *current* constituents + a documented caveat. **Done when:** clean panel dataset saved.
 2. **Features** — per stock/day: 3/6/12-month return, volatility, volume/liquidity, price
@@ -26,10 +28,13 @@ price/direction predictor.
 
 **Phases 7–10 (after v1):**
 
-7. Risk engine
-8. LLM analyst layer (Groq)
-9. Streamlit dashboard + live paper-trading track record
-10. Ship (README, methodology, demo, applications)
+7. ✅ Risk engine — long-only pie engine (inverse-vol + position-cap + vol-target).
+8. ✅ LLM analyst layer — local Ollama `phi3:mini` explainer (template default, `USE_LLM=1`
+   opt-in; hosted Groq swap noted). _Folded the product-page work in here._
+9. ✅ Streamlit dashboard + live paper-trading track record — model frozen 2024-05-15, traded
+   forward (single frozen model, never refit), marked to realized returns; idempotent
+   `update_track`, "Track record" tab. Accepted 2026-06-23.
+10. Ship (README, methodology, demo, applications) — **remaining.**
 
 **Phase 6 experiment backlog (banked, build v1 first):**
 
