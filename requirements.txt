@@ -16,7 +16,7 @@ streamlit>=1.40        # demo product page (app.py)
 matplotlib>=3.8        # pie / factor / risk / track-record figures
 joblib>=1.3            # on-disk cache of the fitted book + frozen model
 
-# Data fetching (S&P 500 panel build)
+# Data fetching (S&P 500 panel build) + LLM explainer HTTP (Ollama / Groq REST)
 requests>=2.31
 beautifulsoup4>=4.12   # scrape current S&P 500 constituents
 

@@ -18,6 +18,16 @@ from portfolio.paper_trade import load_track, compute_stats
 
 st.set_page_config(page_title="RankAlpha (demo)", page_icon="📊", layout="wide")
 
+# Bridge Streamlit secrets -> env so the LLM explainer (which reads os.environ) picks up
+# GROQ_API_KEY on a hosted deploy. The key lives only in Streamlit secrets / env — never
+# in the repo. No-op locally if no secrets file is present.
+try:
+    for _k in ("GROQ_API_KEY", "GROQ_MODEL"):
+        if _k in st.secrets and _k not in os.environ:
+            os.environ[_k] = str(st.secrets[_k])
+except Exception:  # no secrets.toml configured -> stay on local/template path
+    pass
+
 DISCLAIMER = ("⚠️ **EDUCATIONAL SIMULATION — NOT investment advice. No real money. "
               "Past backtest does NOT predict future returns.**")
 
@@ -65,9 +75,13 @@ def render_builder(book):
         p = finalize_portfolio(book, amount, target_vol)
         r = p["risk_stats"]
 
-        llm_on = os.environ.get("USE_LLM") == "1"
-        st.write("🧠 Generating plain-English explanation "
-                 + ("(local Phi-3)…" if llm_on else "(instant template)…"))
+        if os.environ.get("GROQ_API_KEY"):
+            backend_msg = "(Groq cloud LLM)…"
+        elif os.environ.get("USE_LLM") == "1":
+            backend_msg = "(local Phi-3)…"
+        else:
+            backend_msg = "(instant template)…"
+        st.write("🧠 Generating plain-English explanation " + backend_msg)
         summary = explain(p)
         status.update(label="Pie ready ✓", state="complete", expanded=False)
 

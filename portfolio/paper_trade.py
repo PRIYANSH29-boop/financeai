@@ -58,6 +58,11 @@ FIG_DIR = Path("figures")
 HOLDINGS_PATH = Path("data/paper_track_holdings.parquet")     # one row per (month, holding)
 PORTFOLIO_PATH = Path("data/paper_track_portfolio.parquet")   # one row per month
 
+# Committed (TRACKED) hosted-demo copies, served when the live ledger above is absent
+# (e.g. on a free cloud host). Regenerate via `python -m portfolio.make_bundle`.
+BUNDLE_PORTFOLIO = Path("portfolio/bundle/paper_track_portfolio.parquet")
+BUNDLE_HOLDINGS = Path("portfolio/bundle/paper_track_holdings.parquet")
+
 # --- frozen-model + book config (matches the live engine's Balanced product book) ---
 FREEZE_DATE = pd.Timestamp("2024-05-15")   # model frozen here; everything after is OOS
 TOP_N = 50
@@ -155,11 +160,16 @@ def _build_and_mark(model, labeled, panel, t, prev_w: pd.Series):
 
 # --------------------------------------------------------------------- ledger
 def load_track():
-    """Return (portfolio_df, holdings_df) or (None, None) if no ledger yet."""
-    if PORTFOLIO_PATH.exists() and HOLDINGS_PATH.exists():
-        pf = pd.read_parquet(PORTFOLIO_PATH).sort_values("date").reset_index(drop=True)
-        hd = pd.read_parquet(HOLDINGS_PATH).sort_values(["date", "weight"],
-                                                        ascending=[True, False])
+    """Return (portfolio_df, holdings_df) or (None, None) if no ledger yet.
+
+    Prefers the live local ledger; falls back to the committed bundle on a host that has
+    no `data/` (so the hosted track tab renders the same realized record)."""
+    pf_path = PORTFOLIO_PATH if PORTFOLIO_PATH.exists() else BUNDLE_PORTFOLIO
+    hd_path = HOLDINGS_PATH if HOLDINGS_PATH.exists() else BUNDLE_HOLDINGS
+    if pf_path.exists() and hd_path.exists():
+        pf = pd.read_parquet(pf_path).sort_values("date").reset_index(drop=True)
+        hd = pd.read_parquet(hd_path).sort_values(["date", "weight"],
+                                                  ascending=[True, False])
         return pf, hd
     return None, None
 
