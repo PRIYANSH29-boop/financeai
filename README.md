@@ -1,5 +1,7 @@
 # RankAlpha
 
+### ▶️ **[Try the live demo](https://financeai-tqrpxdxbsnqcfvrtko5one.streamlit.app/)** — no install, runs in your browser
+
 **A transparent, leakage-controlled cross-sectional equity ranker for the S&P 500 — with an
 honest, self-explaining portfolio product on top.** A LightGBM LambdaMART model ranks the
 cross-section each month; a research backtest trades the tails long/short; and a long-only
@@ -11,10 +13,10 @@ on a single Linux laptop — no cloud required.
 > *methodology demonstration*, not a deployable strategy. Read [LIMITATIONS.md](LIMITATIONS.md)
 > before trusting any number below.
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit%20Cloud-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://financeai-tqrpxdxbsnqcfvrtko5one.streamlit.app/)
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)
 ![LightGBM](https://img.shields.io/badge/LightGBM-LambdaMART-2ca02c?style=flat)
 ![SHAP](https://img.shields.io/badge/SHAP-explainability-9467bd?style=flat)
-![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=streamlit&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 
 ---
@@ -86,6 +88,8 @@ levered). Two tabs: **Build a pie** and the forward **Track record**.
   by loading a committed precomputed bundle (see below).
 
 ## Hosted public demo (Streamlit Community Cloud)
+
+🔗 **Live:** https://financeai-tqrpxdxbsnqcfvrtko5one.streamlit.app/
 
 The app ships a **clickable public demo** — no clone, no data download. A free host has none
 of the gitignored `data/` parquets and can't run a local LLM, so v1.1 makes two swaps:
