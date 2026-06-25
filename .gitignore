@@ -6,8 +6,9 @@ __pycache__/
 .Python
 .pytest_cache/
 
-# Environment variables (API keys etc)
+# Environment variables (API keys etc) — NEVER commit secrets
 .env
+.streamlit/secrets.toml
 
 # Data files
 data/*.csv

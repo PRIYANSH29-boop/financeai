@@ -75,14 +75,52 @@ levered). Two tabs: **Build a pie** and the forward **Track record**.
 
 ![track](figures/paper_track_equity.png)
 
-- **Local LLM explainer (opt-in):** by default the holdings explanation is a **deterministic
-  template** (instant, equally factual) so the app never hangs on a low-RAM box. Set **`USE_LLM=1`**
-  with **Ollama `phi3:mini`** running (`ollama serve` + `ollama pull phi3:mini`) to use the local
-  model. It is fed **only** the model's real factor/SHAP reasons + stats and is instructed never to
-  predict, advise, or invent numbers; a hosted deploy would swap Ollama for **Groq** (same prompt,
-  same guardrail).
+- **LLM explainer (3 backends, same guardrail):** the holdings explanation defaults to a
+  **deterministic template** (instant, equally factual) so the app never hangs or hard-depends on
+  an LLM. Backend priority: **Groq** if `GROQ_API_KEY` is set (the hosted path) → **local Ollama
+  `phi3:mini`** if `USE_LLM=1` (`ollama serve` + `ollama pull phi3:mini`) → template. Every backend
+  is fed **only** the model's real factor/SHAP reasons + stats and is instructed never to predict,
+  advise, or invent numbers; any LLM failure falls back to the template.
 - **Speed:** the fitted book is cached to disk (`joblib`, `data/cache/`), so only the *first* run
-  fits the model (~80 s); every run after loads in ~1 s.
+  fits the model (~80 s); every run after loads in ~1 s. The **hosted** build skips fitting entirely
+  by loading a committed precomputed bundle (see below).
+
+## Hosted public demo (Streamlit Community Cloud)
+
+The app ships a **clickable public demo** — no clone, no data download. A free host has none
+of the gitignored `data/` parquets and can't run a local LLM, so v1.1 makes two swaps:
+
+- **Precomputed bundle (the data problem).** Instead of refitting the model or downloading 500
+  tickers on boot, the hosted app loads a small **committed bundle** in `portfolio/bundle/`:
+  the frozen fitted long book (`score_book.joblib`, ~24 KB — exactly what `finalize_portfolio`
+  needs: holdings, capped weights, book vol, per-holding SHAP explanations, OOS risk stats) plus
+  the realized paper-track ledger (~58 KB). **Total ≈ 80 KB** — the 131 MB of source parquets stay
+  gitignored and never reach the host. When `data/` is absent the engine serves the bundle
+  automatically (`score_book` / `load_track` fall back to it); first visit renders a pie with **no
+  manual data step**. Regenerate the bundle after refreshing data with `python -m portfolio.make_bundle`.
+- **Groq instead of Ollama.** With `GROQ_API_KEY` set as a Streamlit secret, the explainer uses
+  Groq — same prompt, same explain-only guardrail, same template fallback. The key lives only in
+  Streamlit secrets / env and is **never committed**.
+
+All the honesty survives on the hosted build: the red educational-simulation banner top **and**
+bottom, the "historical, not a forecast" risk labels, and the small-sample caveat on the track tab.
+
+**Deploy steps** (≈ 2 minutes):
+
+1. Push this repo to a **public GitHub** repository.
+2. Go to **[share.streamlit.io](https://share.streamlit.io)** → **Create app** → **Deploy a public
+   app from GitHub** and connect the repo.
+3. Set **Main file path** to `app.py` (branch `main`, Python 3.10+).
+4. Open **Advanced settings ▸ Secrets** and paste:
+   ```toml
+   GROQ_API_KEY = "gsk_your_key_here"
+   ```
+   (free key at [console.groq.com/keys](https://console.groq.com/keys); omit it and the app runs
+   on the deterministic template). See [`.streamlit/secrets.toml.example`](.streamlit/secrets.toml.example).
+5. Click **Deploy**. First boot loads the bundle in ~1 s and serves the pie.
+
+> Alt host: **Hugging Face Spaces** (Streamlit SDK) works the same way — point it at `app.py` and
+> add `GROQ_API_KEY` as a Space secret.
 
 ## How it works
 
@@ -93,7 +131,7 @@ sp500_data.py     ──▶  baseline_momentum.py  ──┐      ┌─▶ engi
   S&P500 panel          no-ML 12-1 momentum     │      │     long-only, inverse-vol,
 sp500_features.py       (the bar to beat)       │      │     position-cap, vol-target
   7 PIT rank feats   lgbm_ranker.py  ───────────┼──────┤  llm_explainer.py  plain-English
-sp500_labels.py         LambdaMART, walk-forward│      │     (template / opt-in Ollama)
+sp500_labels.py         LambdaMART, walk-forward│      │     (template / Ollama / Groq)
   fwd-return ranks      + 21d embargo           │      └─▶ paper_trade.py   frozen-model
                      evaluate.py  ──────────────┘            forward track (update_track)
                         honest OOS eval
@@ -129,8 +167,11 @@ python -m signals.evaluate            # honest OOS evaluation
 # 3) Build the forward paper-trading track record (one model fit, then idempotent)
 python -m portfolio.paper_trade
 
-# 4) Launch the demo product
+# 4) Launch the demo product (local: template by default; USE_LLM=1 for local Ollama)
 streamlit run app.py
+
+# 5) (optional) Refresh the committed hosted-demo bundle after regenerating data
+python -m portfolio.make_bundle   # → portfolio/bundle/ (frozen book + paper-track ledger)
 ```
 
 `portfolio.paper_trade.update_track()` is **idempotent** — re-running appends only newly-due
@@ -151,8 +192,11 @@ financeai/
 │   └── evaluate.py              # honest out-of-sample evaluation
 ├── portfolio/
 │   ├── engine.py                # build_portfolio(): long-only, inverse-vol, vol-target
-│   ├── llm_explainer.py         # plain-English explainer (template / opt-in Ollama)
-│   └── paper_trade.py           # frozen-model forward paper-trading track record
+│   ├── llm_explainer.py         # plain-English explainer (template / Ollama / Groq)
+│   ├── paper_trade.py           # frozen-model forward paper-trading track record
+│   ├── make_bundle.py           # regenerate the committed hosted-demo bundle
+│   └── bundle/                  # committed ~80 KB hosted bundle (frozen book + track)
+├── .streamlit/                  # secrets.toml.example (Groq key for the hosted deploy)
 ├── figures/                     # committed output figures (pie, factors, risk, track)
 ├── CONCEPT.md · ROADMAP.md · LIMITATIONS.md
 ├── requirements.txt · LICENSE · README.md
@@ -175,7 +219,8 @@ financeai/
 - **Honest evaluation & risk communication** — beats a real baseline on the same window, reports
   historical ranges (never forecasts), and separates a forward paper-trade from the backtest.
 - **Pragmatic engineering** — on-disk model caching, idempotent ledger updates, a graceful
-  template fallback so the app never hangs on constrained hardware.
+  template fallback so the app never hangs on constrained hardware, and a one-click public deploy
+  via an ~80 KB precomputed bundle (no refit, no 500-ticker download) + a hosted Groq LLM backend.
 
 ## Disclaimer
 

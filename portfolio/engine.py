@@ -38,6 +38,8 @@ logger = logging.getLogger("pie_engine")
 
 FIG_DIR = Path("figures")
 CACHE_DIR = Path("data/cache")          # gitignored; persists the fitted book across runs
+BUNDLE_DIR = Path("portfolio/bundle")   # TRACKED; the committed hosted-demo bundle
+BUNDLE_BOOK = BUNDLE_DIR / "score_book.joblib"   # frozen fitted book (no parquets needed)
 DISCLAIMER = ("EDUCATIONAL SIMULATION — NOT investment advice. No real money. "
               "Backtested on survivorship-biased data; past backtest does NOT predict "
               "future returns.")
@@ -256,7 +258,18 @@ def score_book(date=None, top_n=50, max_weight=0.08,
 
     The fitted result is also persisted to disk via joblib (`data/cache/`), so a fresh
     `streamlit run` LOADS the book in milliseconds instead of refitting the model.
+
+    HOSTED PATH: on a free cloud host the source parquets are absent (gitignored, and we
+    never download 500 tickers). When `features_path` does not exist we serve the committed
+    precomputed bundle (`portfolio/bundle/score_book.joblib`) — a fully self-contained
+    frozen book that `finalize_portfolio` consumes directly, so the app boots with no refit.
+    Regenerate the bundle with `python -m portfolio.make_bundle`.
     """
+    if not Path(features_path).exists() and BUNDLE_BOOK.exists():
+        logger.info("Source parquets absent; loading committed bundle %s (no refit)",
+                    BUNDLE_BOOK)
+        return joblib.load(BUNDLE_BOOK)
+
     if use_cache:
         key = _cache_key(date, top_n, max_weight, features_path, labeled_path,
                          panel_path, tickers_path)

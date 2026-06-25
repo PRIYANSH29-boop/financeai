@@ -1,19 +1,23 @@
 """
-Local LLM explainer — RankAlpha Phase 8.
+LLM explainer — RankAlpha Phase 8 (Groq backend added in v1.1 for hosting).
 
 Turns the engine's REAL per-holding factor/SHAP reasons + portfolio stats into a short
-plain-English paragraph, using a local Ollama model (phi3:mini). The model is told to
-EXPLAIN, never to predict or advise, and never to invent numbers.
+plain-English paragraph. The model is told to EXPLAIN, never to predict or advise, and
+never to invent numbers.
 
-Guardrails:
+Backend selection (same prompt + guardrails on every path):
+  1. GROQ_API_KEY set  -> Groq cloud LLM   (the HOSTED path; free local LLMs can't run
+     on Streamlit Community Cloud). Key comes from a Streamlit secret / env var only —
+     it is NEVER committed.
+  2. else USE_LLM=1     -> local Ollama (phi3:mini)   (opt-in for local dev)
+  3. else               -> deterministic TEMPLATE      (default; instant, equally factual)
+
+Guardrails (identical on all backends):
   * The prompt contains ONLY facts produced by the engine (weights, sectors, factor
     reasons, backtested risk stats). The model is asked to rephrase, not to add data.
   * Hard instruction: no forecasts, no advice, no invented tickers/numbers.
-  * If Ollama is unreachable, a deterministic TEMPLATED summary (built from the same
-    facts) is returned instead — the app never hard-depends on an LLM.
-
-For a hosted deploy (free cloud can't run a local LLM), swap the Ollama call for Groq —
-same prompt, same guardrails. Not built here.
+  * Any LLM failure (unreachable, empty, error) -> the same deterministic templated
+    summary. The app NEVER hard-depends on an LLM and never invents numbers.
 """
 
 import json
@@ -26,6 +30,10 @@ logger = logging.getLogger("llm_explainer")
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "phi3:mini"
+
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# Small, fast, current Groq production model; override with GROQ_MODEL if desired.
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
 
 SYSTEM = (
     "You explain an EDUCATIONAL, SIMULATED stock portfolio in plain English. "
@@ -82,6 +90,32 @@ def _templated(facts: dict) -> str:
     )
 
 
+def _user_prompt(facts: dict) -> str:
+    """The fact-only user turn shared by every LLM backend."""
+    return "FACTS (JSON):\n" + json.dumps(facts, indent=2) + "\n\nWrite the explanation now."
+
+
+def _call_groq(facts: dict, api_key: str, timeout: float) -> str:
+    """Groq (OpenAI-compatible chat completions). Same SYSTEM guardrail + fact-only prompt."""
+    resp = requests.post(
+        GROQ_URL,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": _user_prompt(facts)},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 220,
+        },
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    text = resp.json()["choices"][0]["message"]["content"].strip()
+    return _trim_to_sentence(text)
+
+
 def _trim_to_sentence(text: str) -> str:
     """Drop a dangling final sentence if generation was cut off by num_predict."""
     if not text or text[-1] in ".!?\"":
@@ -91,15 +125,28 @@ def _trim_to_sentence(text: str) -> str:
 
 
 def explain(portfolio: dict, timeout: float = 150.0) -> dict:
-    """Return {'text': summary, 'source': 'ollama'|'template'}. Never raises.
+    """Return {'text': summary, 'source': 'groq'|'ollama'|'template'}. Never raises.
 
-    The deterministic TEMPLATE is the default — it is equally factual and instant, so the
-    app never hangs on a RAM-starved box. The local LLM path is opt-in: set USE_LLM=1 to
-    call Ollama (phi3:mini). timeout is generous because phi3:mini on CPU has a slow cold
-    start; generation is bounded with num_predict and the model is kept warm for the session.
+    Backend priority: Groq (if GROQ_API_KEY set) -> Ollama (if USE_LLM=1) -> template.
+    The deterministic TEMPLATE is the default and the universal fallback — equally factual
+    and instant, so the app never hangs or hard-depends on an LLM. `timeout` is generous
+    for phi3:mini's slow CPU cold start; the Groq call uses a tight timeout of its own.
     """
     facts = _facts(portfolio)
 
+    # 1) Hosted path — Groq (key from a Streamlit secret / env var; never committed).
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key:
+        try:
+            text = _call_groq(facts, groq_key, timeout=30.0)
+            if text:
+                return {"text": text, "source": "groq"}
+            logger.warning("Groq returned empty response; using template")
+        except Exception as e:  # noqa: BLE001 - any failure -> deterministic fallback
+            logger.warning("Groq unavailable (%s); using templated summary", e)
+        return {"text": _templated(facts), "source": "template"}
+
+    # 2) Local opt-in — Ollama.
     if os.environ.get("USE_LLM") != "1":
         return {"text": _templated(facts), "source": "template"}
 
