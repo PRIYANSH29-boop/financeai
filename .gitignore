@@ -30,3 +30,6 @@ Thumbs.db
 *.log
 logs/
 output.txt
+
+# Analytics — live user-generated charts (the committed ones have no _live_ prefix)
+figures/analytics/_live_*

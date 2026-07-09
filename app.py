@@ -15,6 +15,9 @@ import streamlit as st
 from portfolio.engine import score_book, finalize_portfolio, cash_fraction
 from portfolio.llm_explainer import explain
 from portfolio.paper_trade import load_track, compute_stats
+from analytics.compare import compare
+from analytics.metrics import analyse
+from analytics.rankalpha import rankalpha_returns
 
 st.set_page_config(page_title="RankAlpha (demo)", page_icon="📊", layout="wide")
 
@@ -164,6 +167,77 @@ def render_track():
         st.image("figures/paper_track_stats.png", width="stretch")
 
 
+@st.cache_data(show_spinner="Fetching prices from Yahoo Finance…", ttl=3600)
+def _load_vs_spy(ticker: str):
+    """Monthly returns for `ticker` vs SPY (5y). Cached 1h. Returns (returns_df, ppy)."""
+    from analytics.data import load_returns
+    return load_returns(ticker, benchmark="SPY", period="5y", interval="1mo")
+
+
+def render_analytics():
+    """Tab 3 — the Phase 12 base analyser: a reusable performance report. It runs the
+    SAME generic `analyse` on RankAlpha's realized returns and on any ticker vs SPY."""
+    st.subheader("🔬 Performance analytics")
+    st.caption("A reusable, model-agnostic analyser (`analytics/`) — the same metric engine "
+               "runs on RankAlpha's own paper track and on any ticker you pull from Yahoo "
+               "Finance. Population std (ddof=0); rf=0.")
+
+    # ---- RankAlpha's own returns, through the generic analyser ----
+    st.markdown("#### RankAlpha paper book — full report")
+    try:
+        book, bench = rankalpha_returns()
+    except FileNotFoundError:
+        st.info("No paper-track ledger yet — build it with `python -m portfolio.paper_trade`.")
+        return
+
+    tbl = compare({"RankAlpha": book, "Equal-wt universe": bench},
+                  benchmark=bench, periods_per_year=12, pretty=True)
+    st.dataframe(tbl, width="stretch")
+    st.caption(f"Benchmark = the equal-weight investable universe (not SPY), matching the "
+               f"paper track's own benchmark · {len(book)} monthly rebalances.")
+
+    g1, g2 = st.columns(2)
+    g1.image("figures/analytics/rankalpha_equity.png", width="stretch")
+    g2.image("figures/analytics/rankalpha_drawdown.png", width="stretch")
+    with st.expander("Rolling 12-month Sharpe & volatility · return distribution"):
+        st.image("figures/analytics/rankalpha_rolling.png", width="stretch")
+        st.image("figures/analytics/rankalpha_hist.png", width="stretch")
+
+    # ---- Any ticker vs SPY, through the same analyser ----
+    st.divider()
+    st.markdown("#### Compare any stock vs SPY")
+    st.caption("Pulls 5y of monthly prices from Yahoo Finance and runs the same `analyse`.")
+    c1, c2 = st.columns([2, 1])
+    ticker = c1.text_input("Ticker", value="MSTR",
+                           help="Any Yahoo Finance symbol, e.g. AAPL, NVDA, MSTR.").strip().upper()
+    go = c2.button("Analyse vs SPY", type="primary", width="stretch")
+    if not go or not ticker:
+        return
+
+    try:
+        rets, ppy = _load_vs_spy(ticker)
+    except Exception as e:  # network / bad symbol
+        st.error(f"Couldn't load **{ticker}** from Yahoo Finance: {e}")
+        return
+    if ticker not in rets.columns or "SPY" not in rets.columns:
+        st.error(f"No usable price history for **{ticker}**.")
+        return
+
+    st.dataframe(
+        compare({ticker: rets[ticker], "SPY": rets["SPY"]},
+                benchmark=rets["SPY"], periods_per_year=ppy, pretty=True),
+        width="stretch")
+
+    from analytics.charts import overlay_chart, drawdown_chart
+    o = overlay_chart(rets[ticker], rets["SPY"], stock_label=ticker, bench_label="SPY",
+                      path=f"figures/analytics/_live_{ticker.lower()}_overlay.png")
+    d = drawdown_chart(rets[ticker], label=ticker,
+                       path=f"figures/analytics/_live_{ticker.lower()}_dd.png")
+    o1, o2 = st.columns(2)
+    o1.image(str(o), width="stretch")
+    o2.image(str(d), width="stretch")
+
+
 def main():
     st.title("📊 RankAlpha — transparent portfolio builder")
     st.error(DISCLAIMER)   # unmissable, top of page, red banner
@@ -173,11 +247,14 @@ def main():
 
     book = get_book()
 
-    tab_build, tab_track = st.tabs(["🥧 Build a pie", "📈 Track record"])
+    tab_build, tab_track, tab_analytics = st.tabs(
+        ["🥧 Build a pie", "📈 Track record", "🔬 Analytics"])
     with tab_build:
         render_builder(book)
     with tab_track:
         render_track()
+    with tab_analytics:
+        render_analytics()
 
     st.divider()
     st.error(DISCLAIMER)   # repeat at the bottom — unmissable
