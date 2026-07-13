@@ -104,7 +104,7 @@ def max_drawdown(equity) -> tuple[float, int]:
     underwater stretch. Pass either an equity curve from returns or raw price levels —
     drawdown is scale-invariant.
 
-        max_drawdown([100, 150, 90, 120, 200, 140]) → (-0.40, 3)
+        max_drawdown([100, 150, 90, 120, 200, 140]) → (-0.40, 2)
     """
     eq = np.asarray(equity, dtype="float64")
     eq = eq[~np.isnan(eq)]

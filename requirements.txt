@@ -21,5 +21,8 @@ requests>=2.31
 beautifulsoup4>=4.12   # scrape current S&P 500 constituents
 yfinance>=0.2          # analytics/ base analyser — autopilot price loader (any ticker + benchmark)
 
+# Test / dev
+pytest>=8              # analytics/ base-analyser unit tests (pytest analytics/tests/ -q)
+
 # Optional: local LLM explainer (set USE_LLM=1). Requires a separate Ollama install
 # (`ollama serve` + `ollama pull phi3:mini`); no Python package needed — called over HTTP.
