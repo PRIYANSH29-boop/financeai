@@ -69,11 +69,19 @@ def frozen_lgbm_score(day: pd.DataFrame, model) -> pd.Series:
 
 
 # ------------------------------------------------------------- one month, one book
-def _build_and_mark(day: pd.DataFrame, score: pd.Series, panel, t, prev_w: pd.Series):
+def _build_and_mark(day: pd.DataFrame, score: pd.Series, panel, t, prev_w: pd.Series,
+                    allow_leverage: bool = False):
     """Build the frozen-track product book from `score` and mark to realized fwd return.
 
     Mirrors `portfolio.paper_trade._build_and_mark` exactly (top-N long-only, inverse-vol
     weights, cap, vol target, cash buffer, turnover cost) — only the score source differs.
+
+    allow_leverage : the frozen book only ever DE-risks (`k = min(1, target/book_vol)`),
+        leaving low-vol books under the target with a cash buffer. With this flag the vol
+        target is two-sided (`k = target/book_vol`), levering the book UP to hit the target
+        so a low-vol book is compared at MATCHED risk. Borrowing earns/costs 0 (same as the
+        cash convention) and per-name caps scale with leverage — an optimistic, documented
+        simplification used only to separate factor efficiency from de-risking.
     """
     day = day.copy()
     day["score"] = score.reindex(day["ticker"].values).to_numpy()
@@ -85,8 +93,11 @@ def _build_and_mark(day: pd.DataFrame, score: pd.Series, panel, t, prev_w: pd.Se
     capped = _cap_weights(base, MAX_WEIGHT)             # fully invested (sum=1)
 
     book_vol = _book_vol(capped.index, capped, panel, t)
-    k = min(1.0, TARGET_VOL / book_vol) if book_vol > 0 else 1.0
-    weights = capped * k                                # vol-targeted; remainder is cash
+    if book_vol > 0:
+        k = TARGET_VOL / book_vol if allow_leverage else min(1.0, TARGET_VOL / book_vol)
+    else:
+        k = 1.0
+    weights = capped * k                                # vol-targeted (levered if allowed)
     cash_w = float(1.0 - weights.sum())
 
     fwd = holdings.set_index("ticker")["fwd_ret_1m"]
@@ -108,13 +119,16 @@ def _build_and_mark(day: pd.DataFrame, score: pd.Series, panel, t, prev_w: pd.Se
 
 
 # --------------------------------------------------------------------- run a spec
-def run_strategy(spec: dict, labeled=None, panel=None, score_fn=None) -> pd.DataFrame:
+def run_strategy(spec: dict, labeled=None, panel=None, score_fn=None,
+                 allow_leverage: bool = False) -> pd.DataFrame:
     """Run a strategy spec through the frozen book pipeline → per-month portfolio frame.
 
     spec : {name, factors, combine, long_only, rebalance}. Only `factors`/`combine` and
            `long_only` are honored here (rebalance is monthly, matching the frozen track).
     score_fn : optional override `score_fn(day) -> Series` (used by the plumbing check to
                inject the frozen LGBM score); otherwise the score comes from `factors`.
+    allow_leverage : two-sided vol target (lever a low-vol book UP to 14%) for a
+               matched-risk comparison. See `_build_and_mark`. Default False.
 
     Returns a DataFrame with the same columns as the committed paper track, one row per
     rebalance month, over the identical frozen-track window.
@@ -141,7 +155,7 @@ def run_strategy(spec: dict, labeled=None, panel=None, score_fn=None) -> pd.Data
         day = labeled[labeled["date"] == t]
         if len(day) < TOP_N:
             continue
-        row, prev_w = _build_and_mark(day, score_fn(day), panel, t, prev_w)
+        row, prev_w = _build_and_mark(day, score_fn(day), panel, t, prev_w, allow_leverage)
         rows.append(row)
 
     return pd.DataFrame(rows)

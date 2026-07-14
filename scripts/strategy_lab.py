@@ -85,6 +85,29 @@ def _plot_drawdown(ra, rb, path: Path):
     _save(fig, path)
 
 
+_BLEV_C = "#9467bd"
+
+
+def _plot_matched_vol(ra, rb, rbl, path: Path):
+    """Two panels: equity and drawdown for A, B, and B levered to the 14% vol target."""
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), height_ratios=[3, 2], sharex=True)
+    for r, c, lab in [(ra, _A_C, "A · Momentum"), (rb, _B_C, "B · +low-vol (capped, 9% vol)"),
+                      (rbl, _BLEV_C, "B-lev · +low-vol @ 14% vol")]:
+        ax1.plot(_equity(r).index, _equity(r).values, lw=2, color=c, label=lab)
+    ax1.set_title("Matched-vol follow-up — lever the low-vol book up to the 14% target")
+    ax1.set_ylabel("Growth of $1 (×)")
+    ax1.grid(alpha=0.3)
+    ax1.legend()
+    for r, c in [(ra, _A_C), (rb, _B_C), (rbl, _BLEV_C)]:
+        d = _drawdown(r)
+        ax2.plot(d.index, d.values, lw=1.6, color=c)
+    ax2.fill_between(_drawdown(ra).index, _drawdown(ra).values, 0, color=_A_C, alpha=0.12)
+    ax2.set_title("Drawdown — A vs B vs B levered to matched vol")
+    ax2.set_ylabel("Drawdown")
+    ax2.grid(alpha=0.3)
+    _save(fig, path)
+
+
 def _save(fig, path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -109,7 +132,52 @@ def _plumbing_check(labeled, panel) -> bool:
     return bool((m["net_ret_lab"] - m["net_ret_c"]).abs().max() < 1e-9)
 
 
-def build_scorecard(mA, mB, mBench, turnA, turnB, corr_sig, corr_ret, n, plumb_ok) -> str:
+def _matched_vol_section(mA, mB, mBl, turnBl, invested_mean, invested_max) -> list:
+    def pct(x):
+        return f"{x:.2%}"
+
+    d_ret = (mBl["total_return"] - mA["total_return"]) * 100
+    return [
+        "",
+        "## Matched-vol follow-up — is the return give-up just de-risking?",
+        "",
+        "The capped B runs at only ~9% vol vs the 14% target, so its lower raw return could "
+        "be pure de-risking rather than a worse factor. To separate the two, **B-lev** uses "
+        "a two-sided vol target — levering the low-vol book UP to 14% (borrowing at an "
+        "assumed 0% rate; per-name caps scale with leverage). Sharpe is vol-invariant, so "
+        "this only re-expresses B at matched risk.",
+        "",
+        "| Metric | A · Momentum | B · +low-vol (capped) | B-lev · +low-vol @ 14% |",
+        "|---|---|---|---|",
+        f"| Volatility (ann) | {pct(mA['volatility'])} | {pct(mB['volatility'])} | {pct(mBl['volatility'])} |",
+        f"| Total return | {pct(mA['total_return'])} | {pct(mB['total_return'])} | {pct(mBl['total_return'])} |",
+        f"| CAGR | {pct(mA['cagr'])} | {pct(mB['cagr'])} | {pct(mBl['cagr'])} |",
+        f"| Sharpe | {mA['sharpe']:.2f} | {mB['sharpe']:.2f} | {mBl['sharpe']:.2f} |",
+        f"| Sortino | {mA['sortino']:.2f} | {mB['sortino']:.2f} | {mBl['sortino']:.2f} |",
+        f"| Max drawdown | {pct(mA['max_drawdown'])} | {pct(mB['max_drawdown'])} | {pct(mBl['max_drawdown'])} |",
+        f"| Avg invested (leverage) | 0.68× | 0.98× | {invested_mean:.2f}× (max {invested_max:.2f}×) |",
+        f"| Avg turnover / rebalance | — | — | {turnBl:.2f} |",
+        "",
+        f"**Verdict — the give-up was de-risking, and low-vol is *more* than a risk dial.** "
+        f"At matched ~14% vol, B-lev returns **{pct(mBl['total_return'])}** vs A's "
+        f"**{pct(mA['total_return'])}** ({d_ret:+.1f} pp — the ~18 pp gap essentially closes). "
+        f"Yet B-lev's max drawdown is **{pct(mBl['max_drawdown'])}** vs A's "
+        f"**{pct(mA['max_drawdown'])}** — still less than half — and Sortino stays far higher "
+        f"({mBl['sortino']:.2f} vs {mA['sortino']:.2f}). So at equal risk the low-vol book "
+        f"earns the **same return with materially less downside**: genuine downside "
+        f"efficiency, not just a lower dial.",
+        "",
+        f"**Caveat:** this needs real leverage (avg {invested_mean:.2f}×, up to "
+        f"{invested_max:.2f}×) at an **assumed 0% borrowing cost**; a realistic funding rate "
+        f"would trim B-lev's return. Turnover also rises to {turnBl:.2f}. Still DIRECTIONAL "
+        f"(23 months).",
+        "",
+        "![matched-vol](strategy_lab_matched_vol.png)",
+    ]
+
+
+def build_scorecard(mA, mB, mBench, turnA, turnB, corr_sig, corr_ret, n, plumb_ok,
+                    matched=None) -> str:
     ddA, ddB = mA["max_drawdown"], mB["max_drawdown"]
     d_dd = (ddB - ddA) * 100
     d_sh = mB["sharpe"] - mA["sharpe"]
@@ -211,8 +279,10 @@ def build_scorecard(mA, mB, mBench, turnA, turnB, corr_sig, corr_ret, n, plumb_o
         "",
         "![equity](strategy_lab_equity.png)",
         "![drawdown](strategy_lab_drawdown.png)",
-        "",
     ]
+    if matched is not None:
+        lines += _matched_vol_section(**matched)
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -239,12 +309,21 @@ def main() -> None:
     corr_sig = signal_correlation(MOMENTUM["factors"], LOWVOL_FACTOR, labeled=labeled)
     corr_ret = float(ra.corr(rb))
 
+    # Matched-vol follow-up: lever the low-vol book up to the 14% target.
+    Bl = run_strategy(MOMENTUM_LOWVOL, labeled=labeled, panel=panel, allow_leverage=True)
+    rbl = pd.Series(Bl["net_ret"].to_numpy(), index=idx, name="B-lev · +low-vol @14%")
+    mBl = analyse(rbl, benchmark=bench, periods_per_year=12)
+    matched = {"mA": mA, "mB": mB, "mBl": mBl, "turnBl": Bl["turnover"].mean(),
+               "invested_mean": Bl["invested_frac"].mean(),
+               "invested_max": Bl["invested_frac"].max()}
+
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     _plot_equity(ra, rb, bench, FIG_DIR / "strategy_lab_equity.png")
     _plot_drawdown(ra, rb, FIG_DIR / "strategy_lab_drawdown.png")
+    _plot_matched_vol(ra, rb, rbl, FIG_DIR / "strategy_lab_matched_vol.png")
 
     md = build_scorecard(mA, mB, mBench, A["turnover"].mean(), B["turnover"].mean(),
-                         corr_sig, corr_ret, len(A), plumb_ok)
+                         corr_sig, corr_ret, len(A), plumb_ok, matched=matched)
     SCORECARD_PATH.write_text(md, encoding="utf-8")
 
     # Console summary
@@ -257,8 +336,12 @@ def main() -> None:
           f"({(mB['max_drawdown']-mA['max_drawdown'])*100:+.1f} pp)")
     print(f"turnover/rebal: A {A['turnover'].mean():.2f} -> B {B['turnover'].mean():.2f}")
     print(f"mean Spearman(mom rank, low-vol rank): {corr_sig:+.3f}  (return corr {corr_ret:.2f})")
+    print(f"matched-vol: B-lev {mBl['total_return']:+.1%} @ {mBl['volatility']:.1%} vol vs "
+          f"A {mA['total_return']:+.1%} @ {mA['volatility']:.1%} | "
+          f"maxDD B-lev {mBl['max_drawdown']:+.1%} vs A {mA['max_drawdown']:+.1%} "
+          f"(avg {Bl['invested_frac'].mean():.2f}x leverage)")
     print(f"scorecard -> {SCORECARD_PATH}")
-    print("figures -> figures/lab/strategy_lab_equity.png, figures/lab/strategy_lab_drawdown.png")
+    print("figures -> strategy_lab_{equity,drawdown,matched_vol}.png")
 
 
 if __name__ == "__main__":

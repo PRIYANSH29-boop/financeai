@@ -43,3 +43,24 @@ Both strategies run through the **identical** frozen-track book pipeline (2024-0
 
 ![equity](strategy_lab_equity.png)
 ![drawdown](strategy_lab_drawdown.png)
+
+## Matched-vol follow-up — is the return give-up just de-risking?
+
+The capped B runs at only ~9% vol vs the 14% target, so its lower raw return could be pure de-risking rather than a worse factor. To separate the two, **B-lev** uses a two-sided vol target — levering the low-vol book UP to 14% (borrowing at an assumed 0% rate; per-name caps scale with leverage). Sharpe is vol-invariant, so this only re-expresses B at matched risk.
+
+| Metric | A · Momentum | B · +low-vol (capped) | B-lev · +low-vol @ 14% |
+|---|---|---|---|
+| Volatility (ann) | 13.49% | 9.09% | 13.79% |
+| Total return | 46.23% | 28.26% | 44.64% |
+| CAGR | 21.93% | 13.87% | 21.24% |
+| Sharpe | 1.55 | 1.48 | 1.47 |
+| Sortino | 1.82 | 3.84 | 3.57 |
+| Max drawdown | -13.09% | -3.70% | -6.12% |
+| Avg invested (leverage) | 0.68× | 0.98× | 1.36× (max 1.80×) |
+| Avg turnover / rebalance | — | — | 0.84 |
+
+**Verdict — the give-up was de-risking, and low-vol is *more* than a risk dial.** At matched ~14% vol, B-lev returns **44.64%** vs A's **46.23%** (-1.6 pp — the ~18 pp gap essentially closes). Yet B-lev's max drawdown is **-6.12%** vs A's **-13.09%** — still less than half — and Sortino stays far higher (3.57 vs 1.82). So at equal risk the low-vol book earns the **same return with materially less downside**: genuine downside efficiency, not just a lower dial.
+
+**Caveat:** this needs real leverage (avg 1.36×, up to 1.80×) at an **assumed 0% borrowing cost**; a realistic funding rate would trim B-lev's return. Turnover also rises to 0.84. Still DIRECTIONAL (23 months).
+
+![matched-vol](strategy_lab_matched_vol.png)
