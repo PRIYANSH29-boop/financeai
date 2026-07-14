@@ -1,11 +1,15 @@
 # RankAlpha — convenience targets. Uses the repo venv if present.
 PY ?= $(shell [ -x venv/bin/python ] && echo venv/bin/python || echo python3)
 
-.PHONY: analyse test
+.PHONY: analyse lab test
 
 ## Regenerate the analyser scorecard + charts from committed data (no refit, no network).
 analyse:
 	$(PY) scripts/analyse.py
+
+## Strategy Lab v0: score momentum vs momentum+low-vol from committed data (no refit, no network).
+lab:
+	$(PY) scripts/strategy_lab.py
 
 ## Run the base-analyser unit tests.
 test:
