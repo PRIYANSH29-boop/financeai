@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lab.strategy_lab import factor_score
+from lab.strategy_lab import factor_score, monthly_rebalances
 
 _LABELED = "data/sp500_labeled.parquet"
 _PANEL = "data/sp500_panel.parquet"
@@ -47,6 +47,18 @@ def test_equal_weight_combine():
     lov = day["vol_6m"].rank(pct=True, ascending=False).to_numpy()
     combined = factor_score(day, [("mom_12_1m", True), ("vol_6m", False)]).to_numpy()
     assert np.allclose(combined, (mom + lov) / 2)
+
+
+def test_monthly_rebalances_window_and_step():
+    """monthly_rebalances tiles a window every `step` trading days, respecting bounds."""
+    dates = pd.bdate_range("2020-01-01", periods=100)
+    labeled = pd.DataFrame({"date": list(dates) * 2, "ticker": ["A"] * 100 + ["B"] * 100})
+    reb = monthly_rebalances(labeled, "2020-02-01", "2020-04-01", step=21)
+    assert reb == sorted(reb)
+    assert all(pd.Timestamp("2020-02-01") <= d <= pd.Timestamp("2020-04-01") for d in reb)
+    # 21-trading-day spacing between consecutive rebalances.
+    gaps = [(reb[i + 1] - reb[i]).days for i in range(len(reb) - 1)]
+    assert all(g >= 28 for g in gaps)  # 21 business days ≈ 29 calendar days
 
 
 @pytest.mark.skipif(

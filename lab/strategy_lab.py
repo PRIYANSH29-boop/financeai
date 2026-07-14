@@ -119,8 +119,21 @@ def _build_and_mark(day: pd.DataFrame, score: pd.Series, panel, t, prev_w: pd.Se
 
 
 # --------------------------------------------------------------------- run a spec
+def monthly_rebalances(labeled, start=None, end=None, step: int = 21):
+    """Non-overlapping ~monthly rebalance dates within [start, end] (every `step` days).
+
+    Used for regime windows (2008 GFC, COVID) that don't key off the 2024 freeze date.
+    """
+    dates = np.sort(labeled["date"].unique())
+    if start is not None:
+        dates = dates[dates >= pd.Timestamp(start)]
+    if end is not None:
+        dates = dates[dates <= pd.Timestamp(end)]
+    return [pd.Timestamp(d) for d in dates[::step]]
+
+
 def run_strategy(spec: dict, labeled=None, panel=None, score_fn=None,
-                 allow_leverage: bool = False) -> pd.DataFrame:
+                 allow_leverage: bool = False, rebalances=None) -> pd.DataFrame:
     """Run a strategy spec through the frozen book pipeline → per-month portfolio frame.
 
     spec : {name, factors, combine, long_only, rebalance}. Only `factors`/`combine` and
@@ -129,9 +142,11 @@ def run_strategy(spec: dict, labeled=None, panel=None, score_fn=None,
                inject the frozen LGBM score); otherwise the score comes from `factors`.
     allow_leverage : two-sided vol target (lever a low-vol book UP to 14%) for a
                matched-risk comparison. See `_build_and_mark`. Default False.
+    rebalances : optional explicit list of rebalance dates (e.g. a regime window). Defaults
+               to the frozen-track schedule `_rebalance_dates(labeled, FREEZE_DATE)`.
 
     Returns a DataFrame with the same columns as the committed paper track, one row per
-    rebalance month, over the identical frozen-track window.
+    rebalance month.
     """
     if spec.get("combine", "rank_avg") != "rank_avg":
         raise ValueError(f"only 'rank_avg' combine is supported (got {spec.get('combine')!r})")
@@ -147,8 +162,12 @@ def run_strategy(spec: dict, labeled=None, panel=None, score_fn=None,
         factors = spec["factors"]
         score_fn = lambda day: factor_score(day, factors)  # noqa: E731
 
-    rebals = [pd.Timestamp(d) for d in _rebalance_dates(labeled, FREEZE_DATE)]
-    rebals = [d for d in rebals if (labeled["date"] == d).any()]
+    if rebalances is not None:
+        rebals = [pd.Timestamp(d) for d in rebalances]
+    else:
+        rebals = [pd.Timestamp(d) for d in _rebalance_dates(labeled, FREEZE_DATE)]
+    labeled_dates = set(labeled["date"].unique())
+    rebals = [d for d in rebals if d in labeled_dates]
 
     rows, prev_w = [], pd.Series(dtype=float)
     for t in rebals:
