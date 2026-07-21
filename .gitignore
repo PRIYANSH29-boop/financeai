@@ -33,3 +33,6 @@ output.txt
 
 # Analytics — live user-generated charts (the committed ones have no _live_ prefix)
 figures/analytics/_live_*
+
+# FMP fundamentals raw JSON cache (#17 audit) — regenerable
+data/fundamentals_cache/
