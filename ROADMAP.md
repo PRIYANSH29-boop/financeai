@@ -38,6 +38,40 @@ price/direction predictor.
     figures, quickstart), `requirements.txt`, MIT `LICENSE`, and removal of the aspirational
     legacy scaffold (XGBoost/RAG/Telegram stubs that nothing imported). Done 2026-06-23.
 
+**Phases 12–18 (post-ship research track):**
+
+12. ✅ Analyser — model-agnostic metrics library + charts, unit-tested.
+13. ✅ Analyser scorecard on the frozen 23-month paper track.
+14. ✅ Strategy Lab v0 — momentum vs momentum+low-vol. **VERDICT: KEEP.** At matched vol,
+    low-vol earns ~the same return with half the drawdown; a shock absorber, not a Sharpe
+    booster.
+15. ✅ Beta-targeted pie engine — `portfolio/beta_engine.py::build_portfolio(capital,
+    target_beta)`; hits the target beta by construction, caps impossible targets instead of
+    faking them.
+16. ✅ Universe expansion — `universe.py` builds a US mid+large-cap universe (1,200 names,
+    market cap > $2B) from SEC registrant data + a yfinance liquidity screen; then
+    `scripts/expand_universe.py` REBUILDS the panel/features/labels and **retrains** the
+    ranker on it. A frozen model is only valid on the universe it was fit on, so this is a
+    second frozen model, not a config swap. **VERDICT: pipeline retrains cleanly; the
+    headline number is not trustworthy.** Sharpe rises 1.14 → 1.81 while Rank IC *falls*
+    0.0505 → 0.0276 — payoff up, ranking skill down, which is the signature of
+    survivorship-INCLUSION bias (names that were small in 2019 and compounded past the $2B
+    floor sit in the panel from day one). The S&P 500 model stays the shipped one.
+    Report: `figures/lab/universe_expansion.md`.
+17. ✅ Fundamentals data audit — the GO/NO-GO gate before any fundamental factor. Seven
+    checks (accuracy, coverage, point-in-time, outliers, consistency, survivorship,
+    reproducibility) against **SEC EDGAR XBRL** rather than FMP: EDGAR is the primary
+    source, carries the real `filed` publication date, is free and keyless, and was
+    reachable when FMP was not. **VERDICT: GO** — 19,513 records, 100% carrying a
+    publication date strictly after period end, max cross-source discrepancy 2.5%.
+    Report: `figures/audit/fundamentals_audit.md`.
+18. ✅ Value factor — earnings yield + book-to-market + EBITDA/EV + FCF yield, winsorized →
+    z-scored → averaged, joined by publication date. **VERDICT: DROP.** It passes the
+    independence test (corr with momentum −0.15 to −0.20) and cuts drawdown ~1.6–2.0pp, but
+    Sharpe falls in all three windows tested including at matched vol — the return it gives
+    up exceeds the risk it removes. Uncorrelated is necessary, not sufficient. Report:
+    `figures/lab/value_factor.md`.
+
 **Phase 6 experiment backlog (banked, build v1 first):**
 
 - Sector/industry-neutral ranking (rank within sector to remove hidden sector bets).

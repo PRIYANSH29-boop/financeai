@@ -31,9 +31,18 @@ regime like it. Its −27% OOS drawdown is the worst we've observed, but a real 
 could be worse. The strategy's behavior in a crash is **unknown**, not validated.
 
 ## 5. Single universe (large-cap US only)
-Large-cap S&P 500 only. No mid/small caps, no other regions, no other asset classes. Factor
+The shipped model is large-cap S&P 500 only. No other regions, no other asset classes. Factor
 behavior (especially size and liquidity) differs materially outside large-cap US equities;
 none of these results generalize beyond this universe without re-testing.
+
+Phase 16 tested exactly that: a US mid+large-cap universe (market cap > $2B, 1,200 names)
+with the model **retrained and revalidated** on it — a frozen model is only valid on the
+cross-section it was fit on, because every feature is a rank *within* the universe. See
+`figures/lab/universe_expansion.md` for whether the edge survived. Two caveats specific to
+that universe: it is a *current* market-cap screen applied to all history, so its
+survivorship bias is **worse** than the S&P 500 panel's (the $2B floor deletes precisely the
+names that fell through it), and it includes US-listed foreign issuers (ADRs) because an
+exchange + market-cap screen has no domicile filter.
 
 ## 6. Short-side realism not modelled
 Costs are a flat **10 bps per side on turnover** — no **borrow costs**, no **hard-to-borrow**
@@ -59,7 +68,28 @@ strong momentum) — i.e. the long picks are higher-volatility, *not* the classi
 anomaly. An earlier draft mislabelled this as a "low-volatility effect"; corrected. The result
 rides heavily on the volatility factor, which is crowded and regime-dependent either way.
 
-## 9. Other
+## 9. Fundamentals are point-in-time; the ticker list still is not
+Phase 17 audited the fundamentals feeding the Phase 18 value factor against **SEC EDGAR
+XBRL** and cleared them (GO): every one of 19,513 records carries a real EDGAR `filed` date
+strictly after its period end, values are the *earliest-filed* version so restatements never
+leak backwards, and the maximum cross-source discrepancy vs yfinance was 2.5%. Known residual
+issues, all documented in `figures/audit/fundamentals_audit.md`:
+
+- **Coverage is uneven by sector.** EBITDA/EV (76%) and FCF yield (82%) are undefined for
+  most banks, which do not report a capex line — financials effectively score on E/P and B/M
+  only.
+- **Dual-class filers lack a usable share count.** Berkshire tags only class-A-equivalent
+  shares, so its market cap (and therefore B/M, EBITDA/EV, FCF yield) is missing rather than
+  wrong; an `extreme_book_to_market` flag catches the failure mode where it would be wrong.
+- **EBITDA is derived** (operating income + D&A), not a reported figure, and TTM EPS is the
+  sum of four quarterly diluted EPS figures — an approximation when the share count moves.
+- **Splits are reconciled, not ignored.** XBRL facts are as-reported while the price panel is
+  retro-adjusted; per-share facts are rescaled by the cumulative post-period split factor.
+  Without this, NVDA's pre-2024 earnings yield reads 10x too high.
+- The audit says nothing about survivorship — that caveat is about which *tickers* are in the
+  list (§1), not about the data behind them.
+
+## 10. Other
 - Daily-bar `fwd_ret_1m` uses a per-ticker 21-row shift; tickers with missing days have a
   slightly irregular forward window. Minor at the panel level.
 - No hyperparameter tuning was done (deliberately, to avoid overfitting the test window), so

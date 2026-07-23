@@ -200,10 +200,50 @@ financeai/
 │   ├── paper_trade.py           # frozen-model forward paper-trading track record
 │   ├── make_bundle.py           # regenerate the committed hosted-demo bundle
 │   └── bundle/                  # committed ~80 KB hosted bundle (frozen book + track)
+├── analytics/                   # model-agnostic performance analyser (metrics, charts)
+├── lab/
+│   ├── strategy_lab.py          # survival-chain A/B harness (equal-weight factor combine)
+│   └── value_factor.py          # #18 value composite on point-in-time fundamentals
+├── audit/
+│   ├── fundamentals.py          # #17 seven-check data-quality gate + GO/NO-GO
+│   └── sec_provider.py          # SEC EDGAR XBRL point-in-time fundamentals client
+├── universe.py                  # #16 mid+large-cap universe builder (SEC + liquidity screen)
+├── scripts/                     # CLIs: analyse, strategy_lab, audit_fundamentals,
+│                                #       value_factor, expand_universe, regime_stress_test
 ├── .streamlit/                  # secrets.toml.example (Groq key for the hosted deploy)
-├── figures/                     # committed output figures (pie, factors, risk, track)
+├── figures/                     # committed output figures + reports (audit/, lab/)
 ├── CONCEPT.md · ROADMAP.md · LIMITATIONS.md
-├── requirements.txt · LICENSE · README.md
+├── requirements.txt · LICENSE · README.md · Makefile
+```
+
+## Research track (Phases 12–18)
+
+Post-ship experiments, each gated on the last. The frozen model is never refit — factors are
+combined by equal-weight percentile rank so any change is attributable to the factor itself.
+
+| # | Experiment | Verdict |
+|---|---|---|
+| 14 | Low-volatility factor | **KEEP** — at matched vol, same return, half the drawdown |
+| 15 | Beta-targeted pie engine | Shipped — hits target beta by construction; impossible targets are capped, not faked |
+| 16 | Universe → US mid+large cap, 1,200 names (>$2B), model retrained | Pipeline retrains cleanly, **headline number rejected** — Sharpe up (1.14→1.81) but Rank IC *down* (0.0505→0.0276) |
+| 17 | Fundamentals data audit (SEC EDGAR XBRL) | **GO** — 19,513 records, 100% point-in-time, ≤2.5% cross-source discrepancy |
+| 18 | Value factor (E/P + B/M + EBITDA/EV + FCF yield) | **DROP** — uncorrelated with momentum (−0.15…−0.20) but Sharpe falls in every window |
+
+Two results worth reading:
+
+- **#18** — an independent signal that costs risk-adjusted return is still a worse
+  portfolio. *Uncorrelated* is necessary, not sufficient.
+- **#16** — the wider universe produced a much better-looking Sharpe and a *worse* Rank IC.
+  Payoff up, ranking skill down is the fingerprint of survivorship-**inclusion** bias
+  (2019's future ten-baggers are in the panel from day one because they clear a *today's*
+  $2B screen), so the number was rejected rather than banked. The S&P 500 model remains the
+  shipped one.
+
+```bash
+make audit      # #17 — regenerate the GO/NO-GO data-quality report (needs network)
+make value      # #18 — value factor A/B (refuses to run unless #17 says GO)
+make universe   # #16 — build the wider universe, retrain, report (needs network, slow)
+make test-all   # every unit-test suite
 ```
 
 ## Methodology & honesty
