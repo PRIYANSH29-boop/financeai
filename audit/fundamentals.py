@@ -19,9 +19,16 @@ The seven checks (per the #17 spec)
 6. Survivorship — does history include delisted names or only survivors? Documented.
 7. Reproducible — this script + a written report; re-runnable, disk-cached, no eyeballing.
 
-Data source: Financial Modeling Prep (FMP) free tier. Its statement endpoints return both
-`date` (period end) and `fillingDate` (SEC publication date) — exactly what point-in-time
-integrity needs. yfinance is a cross-check source only (it has no publication dates).
+Data sources
+------------
+* **`sec` (default)** — SEC EDGAR XBRL `companyfacts`. Every fact carries `filed`, the real
+  EDGAR publication date, so the point-in-time gate runs against the primary source. Free,
+  keyless, reachable. See `audit/sec_provider.py`.
+* **`fmp`** — Financial Modeling Prep free tier (the source #17 was originally specified
+  against). Same record shape via `FMPClient`. Retained, but unreachable from this machine.
+
+yfinance is a cross-check source only, for Check 1 — it carries no publication dates, so it
+can never be the point-in-time source.
 """
 
 from __future__ import annotations
@@ -43,7 +50,7 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("fund_audit")
 
-FMP_BASE = "https://financialmodelingprep.com/api/v3"
+FMP_BASE = "https://financialmodelingprep.com/stable"   # v3 legacy retired 2025-08-31
 CACHE_DIR = Path("data/fundamentals_cache")   # gitignored; raw FMP JSON, so re-runs are free
 REPORT_PATH = Path("figures/audit/fundamentals_audit.md")
 
@@ -123,9 +130,16 @@ def detect_outliers(rec: dict) -> list[str]:
         v = _num(rec.get(k))
         if v is not None and v <= 0:
             flags.append(f"nonpositive_{k}")
-    ey = value_ratios(rec).get("earnings_yield")
+    ratios = value_ratios(rec)
+    ey = ratios.get("earnings_yield")
     if ey is not None and math.isfinite(ey) and abs(ey) > 2.0:   # |E/P|>200% ⇒ implausible
         flags.append("extreme_earnings_yield")
+    # A book-to-market above 10 means the market values the firm at under a tenth of book —
+    # for a large cap that is nearly always a broken share count (dual-class filers tag only
+    # class-A-equivalent shares), not a real valuation. Catch it here rather than in the book.
+    bm = ratios.get("book_to_market")
+    if bm is not None and math.isfinite(bm) and bm > 10.0:
+        flags.append("extreme_book_to_market")
     return flags
 
 
@@ -226,13 +240,16 @@ class FMPClient:
 
     def statements(self, ticker: str, quarters: int = 12) -> list[dict]:
         """Merge income / balance-sheet / cash-flow / enterprise-value / profile into tidy
-        per-(ticker, period_end, publication_date) records with the CORE_INPUTS fields."""
-        inc = self._get(f"income-statement/{ticker}", period="quarter", limit=quarters)
-        bal = self._get(f"balance-sheet-statement/{ticker}", period="quarter", limit=quarters)
-        cfs = self._get(f"cash-flow-statement/{ticker}", period="quarter", limit=quarters)
-        ev = self._get(f"enterprise-values/{ticker}", period="quarter", limit=quarters)
-        prof = self._get(f"profile/{ticker}")
-        price = (prof[0].get("price") if isinstance(prof, list) and prof else None)
+        per-(ticker, period_end, publication_date) records with the CORE_INPUTS fields.
+
+        Uses FMP's current `stable` API: endpoints take `?symbol=`, and the publication
+        date field is `filingDate` (the legacy v3 spelling was `fillingDate`)."""
+        inc = self._get("income-statement", symbol=ticker, period="quarter", limit=quarters)
+        bal = self._get("balance-sheet-statement", symbol=ticker, period="quarter", limit=quarters)
+        cfs = self._get("cash-flow-statement", symbol=ticker, period="quarter", limit=quarters)
+        ev = self._get("enterprise-values", symbol=ticker, period="quarter", limit=quarters)
+        prof = self._get("profile", symbol=ticker)
+        prof0 = prof[0] if isinstance(prof, list) and prof else {}
 
         bal_by = {r.get("date"): r for r in bal} if isinstance(bal, list) else {}
         cfs_by = {r.get("date"): r for r in cfs} if isinstance(cfs, list) else {}
@@ -245,17 +262,19 @@ class FMPClient:
             out.append({
                 "ticker": ticker,
                 "period_end": d,
-                "publication_date": r.get("fillingDate") or r.get("acceptedDate"),
+                # publication date: `filingDate` (stable) → `fillingDate` (legacy) → accepted
+                "publication_date": (r.get("filingDate") or r.get("fillingDate")
+                                     or r.get("acceptedDate")),
                 "period": r.get("period"),
                 "reported_currency": r.get("reportedCurrency"),
                 "revenue": r.get("revenue"),
-                "eps": r.get("epsdiluted") if r.get("epsdiluted") is not None else r.get("eps"),
+                "eps": r.get("epsDiluted") if r.get("epsDiluted") is not None else r.get("eps"),
                 "ebitda": r.get("ebitda"),
                 "book_value": b.get("totalStockholdersEquity"),
                 "free_cash_flow": c.get("freeCashFlow"),
                 "enterprise_value": e.get("enterpriseValue"),
-                "market_cap": e.get("marketCapitalization"),
-                "price": price,
+                "market_cap": e.get("marketCapitalization") or prof0.get("marketCap"),
+                "price": prof0.get("price") or e.get("stockPrice"),
             })
         return out
 
@@ -276,66 +295,103 @@ def _load_key(explicit=None) -> str | None:
 
 
 # ============================================================ accuracy cross-check (Check 1)
-def accuracy_vs_yfinance(fmp_records_by_ticker: dict, spot_checks=SPOT_CHECKS) -> dict:
-    """Compare FMP's latest value against yfinance for the spot-check fields. yfinance is
-    flaky (rate limits) and has no publication dates — so a failure here is reported as
-    'cross-check unavailable', NOT as an audit failure."""
+def accuracy_vs_yfinance(records_by_ticker: dict, spot_checks=SPOT_CHECKS) -> dict:
+    """Compare our newest value against yfinance for the spot-check fields.
+
+    Like-for-like matters: our flow fields (revenue, eps) are TRAILING-TWELVE-MONTH, so the
+    cross-source value must be TTM too — yfinance's four most recent quarterly columns
+    summed, and its own `trailingEps`. `book_value` is a balance-sheet level, compared at
+    the latest quarter.
+
+    yfinance is flaky (rate limits) and has no publication dates, so a failure here is
+    reported as 'cross-check unavailable', NOT as an audit failure.
+    """
     try:
         import yfinance as yf
     except ImportError:
         return {"status": "yfinance_not_installed", "checks": []}
     results = []
     for ticker, field_name in spot_checks:
-        recs = fmp_records_by_ticker.get(ticker) or []
+        recs = records_by_ticker.get(ticker) or []
         if not recs:
-            results.append({"ticker": ticker, "field": field_name, "status": "no_fmp_data"})
+            results.append({"ticker": ticker, "field": field_name, "status": "no_source_data"})
             continue
-        fmp_val = _num(recs[0].get(field_name))
+        ours = _num(recs[0].get(field_name))
         try:
             yv = _yf_value(yf, ticker, field_name)
         except Exception as e:                       # noqa: BLE001 — yfinance is best-effort
             results.append({"ticker": ticker, "field": field_name,
                             "status": f"xcheck_unavailable:{type(e).__name__}"})
             continue
-        if fmp_val is None or yv is None or yv == 0:
+        if ours is None or yv is None or yv == 0:
             results.append({"ticker": ticker, "field": field_name, "status": "incomparable",
-                            "fmp": fmp_val, "yf": yv})
+                            "ours": ours, "yf": yv})
             continue
-        rel = abs(fmp_val - yv) / abs(yv)
+        rel = abs(ours - yv) / abs(yv)
         results.append({"ticker": ticker, "field": field_name, "status": "ok",
-                        "fmp": fmp_val, "yf": yv, "rel_discrepancy": rel})
+                        "ours": ours, "yf": yv, "rel_discrepancy": rel,
+                        "period_end": recs[0].get("period_end")})
     comparable = [r["rel_discrepancy"] for r in results if r.get("status") == "ok"]
     return {
         "status": "ran" if comparable else "no_comparisons",
         "max_rel_discrepancy": (max(comparable) if comparable else None),
+        "median_rel_discrepancy": (float(np.median(comparable)) if comparable else None),
         "n_comparable": len(comparable),
         "checks": results,
     }
 
 
 def _yf_value(yf, ticker: str, field_name: str):
+    """TTM-matched cross-source value, or None if yfinance doesn't carry it."""
     t = yf.Ticker(ticker)
     if field_name == "revenue":
         df = t.quarterly_financials
-        return float(df.loc["Total Revenue"].iloc[0]) if "Total Revenue" in df.index else None
+        for k in ("Total Revenue", "Operating Revenue"):
+            if k in df.index:
+                q = pd.to_numeric(df.loc[k], errors="coerce").dropna()
+                return float(q.iloc[:4].sum()) if len(q) >= 4 else None
+        return None
     if field_name == "eps":
-        info = t.info
-        return info.get("trailingEps")
+        return t.info.get("trailingEps")             # already TTM
     if field_name == "book_value":
         df = t.quarterly_balance_sheet
         for k in ("Stockholders Equity", "Total Stockholder Equity"):
             if k in df.index:
-                return float(df.loc[k].iloc[0])
+                q = pd.to_numeric(df.loc[k], errors="coerce").dropna()
+                return float(q.iloc[0]) if len(q) else None
         return None
     return None
 
 
 # ============================================================ orchestration + report
-def run_audit(tickers: list[str], api_key: str, quarters: int = 12,
-              cache_dir: Path = CACHE_DIR) -> dict:
-    """Fetch fundamentals for `tickers` and run all seven checks. Requires a live FMP key +
-    connectivity — raises if the very first fetch fails (so we never 'pass' on no data)."""
-    client = FMPClient(api_key=api_key, cache_dir=Path(cache_dir))
+def make_provider(source: str = "sec", api_key: str | None = None,
+                  cache_dir: Path | None = None, price_panel=None):
+    """Build the fundamentals provider. Both expose `.statements(ticker, quarters)` returning
+    identically-shaped records, so every check below is source-agnostic."""
+    if source == "sec":
+        from audit.sec_provider import SECClient, SEC_CACHE
+        return SECClient(cache_dir=Path(cache_dir or SEC_CACHE), price_panel=price_panel)
+    if source == "fmp":
+        if not api_key:
+            raise ValueError("source='fmp' needs an API key")
+        return FMPClient(api_key=api_key, cache_dir=Path(cache_dir or CACHE_DIR))
+    raise ValueError(f"unknown source {source!r} (expected 'sec' or 'fmp')")
+
+
+def run_audit(tickers: list[str], api_key: str | None = None, quarters: int = 12,
+              cache_dir: Path | None = None, source: str = "sec",
+              price_panel=None, provider=None) -> dict:
+    """Fetch fundamentals for `tickers` and run all seven checks.
+
+    Requires live connectivity to the chosen source — raises if the very first fetch fails,
+    so the audit can never 'pass' on no data. `price_panel` (the daily OHLCV panel) lets the
+    SEC provider strike a point-in-time price/market cap at each publication date.
+    """
+    client = provider or make_provider(source, api_key, cache_dir, price_panel)
+    # Per-share facts are as-reported; the price panel is on today's split basis. Line them
+    # up before anything is computed, or every pre-split name looks spuriously cheap.
+    if getattr(client, "splits", "n/a") is None:
+        client.splits = client.fetch_splits(tickers)
     by_ticker, all_records, fetch_errors = {}, [], []
     for i, tk in enumerate(tickers):
         try:
@@ -359,15 +415,19 @@ def run_audit(tickers: list[str], api_key: str, quarters: int = 12,
         "coverage": coverage_map(latest),
         "point_in_time": assert_point_in_time(all_records),
         "outliers": _outlier_summary(latest),
-        "consistency": _consistency_summary(latest),
+        "consistency": _consistency_summary(latest, splits=getattr(client, "splits", None)),
         "survivorship": {
             "universe_is_point_in_time": False,
             "note": "Universe is today's members (survivorship-biased). History omits "
                     "delisted names; a point-in-time source (e.g. Sharadar) is required for "
-                    "unbiased backtests. Results are DIRECTIONAL / educational only.",
+                    "unbiased backtests. Results are DIRECTIONAL / educational only. Note "
+                    "the FUNDAMENTALS themselves are point-in-time (EDGAR `filed` dates, "
+                    "earliest-filed value per period, no restatements) — the survivorship "
+                    "caveat is about which TICKERS are in the list, not about the data.",
         },
     }
     report = {
+        "source": source,
         "n_tickers_requested": len(tickers),
         "n_tickers_with_data": len(by_ticker),
         "n_records": len(all_records),
@@ -393,15 +453,28 @@ def _outlier_summary(records: list[dict]) -> dict:
                         f"nonpositive denominator) before z-scoring (#18)."}
 
 
-def _consistency_summary(records: list[dict]) -> dict:
+def _consistency_summary(records: list[dict], splits: dict | None = None) -> dict:
     currencies = sorted({r.get("reported_currency") for r in records if r.get("reported_currency")})
     periods = sorted({r.get("period") for r in records if r.get("period")})
+    audited = {r.get("ticker") for r in records}
+    split_names = sorted(audited & set(splits or {}))
     return {
         "currencies_seen": currencies,
         "all_usd": currencies == ["USD"] or currencies == [],
         "periods_seen": periods,
-        "note": "Per-share metrics (eps) assumed split-adjusted by FMP; unit scale (absolute "
-                "$) consistent across statement endpoints. Non-USD filers flagged above.",
+        "split_adjustment_applied": splits is not None,
+        "n_names_with_splits": len(split_names),
+        "split_names_sample": split_names[:12],
+        "note": "Absolute-$ line items are as reported (XBRL facts are already in whole "
+                "units, not thousands). SPLITS: XBRL facts are as-reported and never "
+                "retro-adjusted (we keep the earliest-filed value on purpose), while the "
+                "yfinance price panel rewrites history onto today's split basis — so EPS "
+                "and share counts are multiplied by the cumulative post-period split factor "
+                "before any ratio is formed. Without that step NVDA's pre-June-2024 "
+                "earnings yield would read 10x too high. Fiscal calendars differ across "
+                "filers by design; every record is keyed to its own fiscal period end and "
+                "joined by publication date, never by calendar date. Non-USD filers are "
+                "flagged above.",
     }
 
 
@@ -451,9 +524,12 @@ def write_report(report: dict, path: Path = REPORT_PATH) -> Path:
     c = report["checks"]
     g = report["go_no_go"]
     L = []
+    src = report.get("source", "sec")
+    src_label = {"sec": "SEC EDGAR XBRL `companyfacts` (primary source, real `filed` dates)",
+                 "fmp": "Financial Modeling Prep free tier"}.get(src, src)
     L.append("# RankAlpha — fundamentals data-quality audit (Phase 17)\n")
-    L.append("*Reproducible via `python scripts/audit_fundamentals.py`. Educational "
-             "SIMULATION. FMP free tier; yfinance cross-check only.*\n")
+    L.append(f"*Reproducible via `python scripts/audit_fundamentals.py --source {src}`. "
+             f"Educational SIMULATION. Source: {src_label}; yfinance cross-check only.*\n")
     L.append(f"## VERDICT: **{g['verdict']}**\n")
     for r in g["reasons"]:
         L.append(f"- {r}")
@@ -462,11 +538,22 @@ def write_report(report: dict, path: Path = REPORT_PATH) -> Path:
              f"tickers returned data · {report['n_records']} statement records "
              f"({report['quarters_per_ticker']} quarters/name).\n")
 
-    L.append("## 1. Accuracy (vs yfinance)")
+    L.append("## 1. Accuracy (vs yfinance, TTM-matched)")
     acc = c["accuracy"]
     L.append(f"- status: `{acc['status']}` · comparable fields: {acc.get('n_comparable',0)} · "
              f"max relative discrepancy: "
-             f"{'%.2f%%' % (acc['max_rel_discrepancy']*100) if acc.get('max_rel_discrepancy') is not None else 'n/a'}")
+             f"{'%.2f%%' % (acc['max_rel_discrepancy']*100) if acc.get('max_rel_discrepancy') is not None else 'n/a'}"
+             f" · median: "
+             f"{'%.2f%%' % (acc['median_rel_discrepancy']*100) if acc.get('median_rel_discrepancy') is not None else 'n/a'}")
+    if acc.get("checks"):
+        L.append("")
+        L.append("| ticker | field | ours | yfinance | rel. diff | status |\n|---|---|---|---|---|---|")
+        for r in acc["checks"]:
+            o, y = r.get("ours"), r.get("yf")
+            rel = r.get("rel_discrepancy")
+            L.append(f"| {r['ticker']} | {r['field']} | "
+                     f"{'' if o is None else f'{o:,.4g}'} | {'' if y is None else f'{y:,.4g}'} | "
+                     f"{'' if rel is None else f'{rel:.2%}'} | `{r['status']}` |")
     L.append("")
 
     L.append("## 2. Coverage (% of universe with each value input)")
@@ -492,6 +579,9 @@ def write_report(report: dict, path: Path = REPORT_PATH) -> Path:
     con = c["consistency"]
     L.append(f"- currencies: `{con['currencies_seen']}` · all-USD: {con['all_usd']} · "
              f"periods: `{con['periods_seen']}`")
+    L.append(f"- split adjustment applied: **{con.get('split_adjustment_applied')}** · "
+             f"names with splits in window: {con.get('n_names_with_splits')} "
+             f"(e.g. {', '.join(con.get('split_names_sample', [])) or 'none'})")
     L.append(f"- {con['note']}")
     L.append("")
 

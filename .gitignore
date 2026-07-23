@@ -36,3 +36,9 @@ figures/analytics/_live_*
 
 # FMP fundamentals raw JSON cache (#17 audit) — regenerable
 data/fundamentals_cache/
+
+# SEC EDGAR XBRL extraction cache (#17/#18) — regenerable from data.sec.gov, ~13 MB
+data/sec_cache/
+
+# Scratch space for run logs / throwaway scripts
+scratchpad/
