@@ -254,39 +254,59 @@ def _decide(windows: list[dict]) -> str:
     already trade AND it improves the scorecard. Passing only the first test is not enough —
     an independent signal that costs Sharpe is still a worse portfolio.
     """
-    lines, sharpe_deltas, dd_deltas = [], [], []
+    lines, sharpe_deltas, dd_deltas, sortino_deltas = [], [], [], []
     for w in windows:
         t = w["table"]
         sa, sb = _pct(t.at["Sharpe", "A · Momentum"]), _pct(t.at["Sharpe", "B · Momentum + value"])
         da = _pct(t.at["Max drawdown", "A · Momentum"])
         db = _pct(t.at["Max drawdown", "B · Momentum + value"])
+        oa = _pct(t.at["Sortino", "A · Momentum"])
+        ob = _pct(t.at["Sortino", "B · Momentum + value"])
         sharpe_deltas.append(sb - sa)
         dd_deltas.append(db - da)          # positive = shallower drawdown (less negative)
+        sortino_deltas.append(ob - oa)
         lines.append(
             f"- **{w['name']}** ({w['n_months']} months): Sharpe "
             f"{t.at['Sharpe','A · Momentum']} → {t.at['Sharpe','B · Momentum + value']} "
-            f"({sb - sa:+.2f}); max drawdown {t.at['Max drawdown','A · Momentum']} → "
+            f"({sb - sa:+.2f}); Sortino {t.at['Sortino','A · Momentum']} → "
+            f"{t.at['Sortino','B · Momentum + value']} ({ob - oa:+.2f}); "
+            f"max drawdown {t.at['Max drawdown','A · Momentum']} → "
             f"{t.at['Max drawdown','B · Momentum + value']} ({db - da:+.2%}); "
             f"corr(value, momentum) {w['corr_mean']:+.3f}.")
 
     uncorrelated = all(abs(w["corr_mean"]) < 0.30 for w in windows)
     sharpe_up = all(d > 0.02 for d in sharpe_deltas)
     dd_better = all(d > 0.005 for d in dd_deltas)
+    sortino_up = all(d > 0.0 for d in sortino_deltas)
 
     if uncorrelated and sharpe_up:
         rec = ("**KEEP.** Value is independent of momentum and lifts risk-adjusted return "
                "in every window tested.")
     elif uncorrelated and dd_better and not sharpe_up:
+        # Sharpe and Sortino can disagree here, and saying only "it costs more return than
+        # risk it removes" would be wrong when Sortino rises: total volatility went up while
+        # DOWNSIDE volatility went down, i.e. value added upside dispersion, not losses.
+        downside = (
+            " Note the two risk measures disagree, and the honest reading needs both: "
+            "**Sortino IMPROVES in every window** while Sharpe falls. Value is not costing "
+            "return relative to the losses it prevents — it is adding *total* volatility "
+            "(which Sharpe penalises) while cutting *downside* volatility (which Sortino "
+            "rewards). So the case against it is not that it fails to pay; it is that it "
+            "fails the locked survival rule, which is written on the headline scorecard."
+            if sortino_up else
+            " Sharpe and Sortino agree: the return given up exceeds the risk removed.")
         rec = ("**DROP for now — but a genuine near-miss, and the reason is worth stating "
                "precisely.** Value passes the independence test (the hard one) and it does "
-               "cut drawdown in every window. What it does not do is pay for itself: Sharpe "
-               "falls in every window because the return it gives up exceeds the risk it "
-               "removes. That is the opposite of the low-vol result in #14, which held "
-               "return while halving drawdown and so earned its place. Under the "
+               "cut drawdown in every window." + downside +
+               " That is a weaker result than the low-vol factor in #14, which held return "
+               "while halving drawdown and so earned its place outright. Under the "
                "survival-chain rule — uncorrelated AND improves the scorecard — one out of "
-               "two is a DROP. Keep the harness and the point-in-time data; revisit value "
-               "when it can be tested on a universe where cheap names are not "
-               "systematically the ones survivorship deleted.")
+               "two is a DROP. Two further reasons not to rescue it on the Sortino reading: "
+               "the margins are inside noise at 71 monthly observations, and this universe "
+               "is biased *against* value specifically (survivorship deleted the cheap names "
+               "that died), so a marginal read is untrustworthy in either direction. "
+               "**Banked, not dead** — value goes on the revisit list gated on point-in-time "
+               "constituents, and the harness and fundamentals are reusable as-is.")
     elif not uncorrelated:
         rec = ("**DROP.** Value is too correlated with momentum to be adding independent "
                "information.")

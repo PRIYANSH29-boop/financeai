@@ -74,11 +74,11 @@ Each ratio winsorized at (0.01, 0.99), z-scored cross-sectionally per rebalance,
 
 ## Verdict
 
-- **Frozen paper-track window** (23 months): Sharpe 1.55 → 1.46 (-0.09); max drawdown -13.09% → -11.06% (+2.03%); corr(value, momentum) -0.203.
-- **Full labelled history** (71 months): Sharpe 1.37 → 1.27 (-0.10); max drawdown -14.13% → -12.50% (+1.63%); corr(value, momentum) -0.151.
-- **Full history, matched vol (14%)** (71 months): Sharpe 1.37 → 1.30 (-0.07); max drawdown -14.13% → -12.50% (+1.63%); corr(value, momentum) -0.151.
+- **Frozen paper-track window** (23 months): Sharpe 1.55 → 1.46 (-0.09); Sortino 1.82 → 2.19 (+0.37); max drawdown -13.09% → -11.06% (+2.03%); corr(value, momentum) -0.203.
+- **Full labelled history** (71 months): Sharpe 1.37 → 1.27 (-0.10); Sortino 2.37 → 2.40 (+0.03); max drawdown -14.13% → -12.50% (+1.63%); corr(value, momentum) -0.151.
+- **Full history, matched vol (14%)** (71 months): Sharpe 1.37 → 1.30 (-0.07); Sortino 2.37 → 2.55 (+0.18); max drawdown -14.13% → -12.50% (+1.63%); corr(value, momentum) -0.151.
 
-**DROP for now — but a genuine near-miss, and the reason is worth stating precisely.** Value passes the independence test (the hard one) and it does cut drawdown in every window. What it does not do is pay for itself: Sharpe falls in every window because the return it gives up exceeds the risk it removes. That is the opposite of the low-vol result in #14, which held return while halving drawdown and so earned its place. Under the survival-chain rule — uncorrelated AND improves the scorecard — one out of two is a DROP. Keep the harness and the point-in-time data; revisit value when it can be tested on a universe where cheap names are not systematically the ones survivorship deleted.
+**DROP for now — but a genuine near-miss, and the reason is worth stating precisely.** Value passes the independence test (the hard one) and it does cut drawdown in every window. Note the two risk measures disagree, and the honest reading needs both: **Sortino IMPROVES in every window** while Sharpe falls. Value is not costing return relative to the losses it prevents — it is adding *total* volatility (which Sharpe penalises) while cutting *downside* volatility (which Sortino rewards). So the case against it is not that it fails to pay; it is that it fails the locked survival rule, which is written on the headline scorecard. That is a weaker result than the low-vol factor in #14, which held return while halving drawdown and so earned its place outright. Under the survival-chain rule — uncorrelated AND improves the scorecard — one out of two is a DROP. Two further reasons not to rescue it on the Sortino reading: the margins are inside noise at 71 monthly observations, and this universe is biased *against* value specifically (survivorship deleted the cheap names that died), so a marginal read is untrustworthy in either direction. **Banked, not dead** — value goes on the revisit list gated on point-in-time constituents, and the harness and fundamentals are reusable as-is.
 
 ## Caveats
 
