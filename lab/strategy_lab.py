@@ -188,16 +188,24 @@ def strategy_returns(spec: dict, **kw) -> pd.Series:
 
 
 # ------------------------------------------------------- factor independence check
-def signal_correlation(factors_a, factors_b, labeled=None) -> float:
+def signal_correlation(factors_a, factors_b, labeled=None, rebalances=None,
+                       per_date: bool = False):
     """Mean cross-sectional Spearman correlation between two factor scores.
 
-    Averaged over the frozen-track rebalance dates. ~0 → the factors carry independent
-    information; ~±1 → redundant. Used to judge whether low-vol adds anything to momentum.
+    Averaged over the rebalance dates (the frozen-track schedule by default). ~0 → the
+    factors carry independent information; ~±1 → redundant. Used to judge whether a
+    candidate factor adds anything to momentum.
+
+    per_date : return the per-rebalance Series instead of the mean, so a report can show
+        the dispersion (a mean near zero can hide a correlation that swings with regime).
     """
     if labeled is None:
         labeled = pd.read_parquet(LABELED_PATH); labeled["date"] = pd.to_datetime(labeled["date"])
-    rebals = [pd.Timestamp(d) for d in _rebalance_dates(labeled, FREEZE_DATE)]
-    corrs = []
+    if rebalances is not None:
+        rebals = [pd.Timestamp(d) for d in rebalances]
+    else:
+        rebals = [pd.Timestamp(d) for d in _rebalance_dates(labeled, FREEZE_DATE)]
+    corrs, dates = [], []
     for t in rebals:
         day = labeled[labeled["date"] == t]
         if len(day) < TOP_N:
@@ -205,6 +213,9 @@ def signal_correlation(factors_a, factors_b, labeled=None) -> float:
         a = factor_score(day, factors_a)
         b = factor_score(day, factors_b)
         corrs.append(a.corr(b, method="spearman"))
+        dates.append(t)
+    if per_date:
+        return pd.Series(corrs, index=pd.DatetimeIndex(dates), name="signal_corr")
     return float(np.nanmean(corrs)) if corrs else float("nan")
 
 
