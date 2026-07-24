@@ -255,6 +255,8 @@ export function DriftPanel({ pie }) {
 export function HonestyPanel({ pie, index, capital }) {
   const sc = pie.scorecard;
   const bd = pie.beta_in_drawdown_window;
+  // #21 measured regime beta for this preset, if the bundle carries it (only the 3 presets).
+  const regime = index.regime_beta?.[pie.target_beta?.toFixed(2)];
 
   return (
     <details className="expander" open>
@@ -303,6 +305,20 @@ export function HonestyPanel({ pie, index, capital }) {
             beta was <span className="num">{fmtBeta(bd.beta)}</span>, against a headline{" "}
             <span className="num">{fmtBeta(pie.achieved_beta)}</span>. A beta estimated over
             calm months is not a promise about how it behaves in a fall.
+          </p>
+        )}
+
+        {regime && regime.calm != null && regime.stressed_core != null && (
+          <p className="muted" style={{ fontSize: "0.84rem", marginTop: 12 }}>
+            <strong>Measured beta drift (2022 bear):</strong> across the committed history
+            this pie&apos;s realised beta was about{" "}
+            <span className="num">β{fmtBeta(regime.calm)}</span> in calm months but about{" "}
+            <span className="num">β{fmtBeta(regime.stressed_core)}</span> in the{" "}
+            {regime.n_core}-month drawdown core of the 2022 bear — the target-beta estimate
+            understates risk exactly when it matters.{" "}
+            <span className="faint">
+              Single stress episode, in-sample characterisation — directional, not a forecast.
+            </span>
           </p>
         )}
 

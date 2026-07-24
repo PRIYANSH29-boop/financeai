@@ -12,8 +12,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Donut from "./Donut";
+import { beta as fmtBeta } from "../lib/format";
 import {
-  ControlBar, WhyHolding, DriftPanel, HonestyPanel, HowItWorks,
+  ControlBar, WhyHolding, DriftPanel, HonestyPanel,
 } from "./Panels";
 
 export default function PieApp({ index, initialPie }) {
@@ -21,7 +22,6 @@ export default function PieApp({ index, initialPie }) {
   const [target, setTarget] = useState(initialPie.target_beta);
   const [pie, setPie] = useState(initialPie);
   const [selected, setSelected] = useState(null);
-  const [showHow, setShowHow] = useState(false);
   const [error, setError] = useState(null);
 
   const cache = useRef({ [initialPie.target_beta]: initialPie });
@@ -67,18 +67,7 @@ export default function PieApp({ index, initialPie }) {
   const asOf = useMemo(() => pie.as_of, [pie]);
 
   return (
-    <>
-      <header className="site-header">
-        <div className="inner">
-          <span className="brand">Rank<span>Alpha</span></span>
-          <span className="sim-badge">Educational simulation</span>
-          <button className="link-btn" onClick={() => setShowHow(true)}>
-            How it works →
-          </button>
-        </div>
-      </header>
-
-      <main className="wrap">
+    <main className="wrap">
         <div className="stack" style={{ paddingTop: 22 }}>
           <ControlBar index={index} capital={capital} setCapital={setCapital}
                       target={target} setTarget={setTarget} pie={pie} />
@@ -91,7 +80,19 @@ export default function PieApp({ index, initialPie }) {
 
           <div className="main-grid">
             <div className="card">
-              <h2>Your pie</h2>
+              <div className="pie-head">
+                <h2 style={{ margin: 0 }}>Your pie</h2>
+                <div className="beta-badges" aria-label="Portfolio beta">
+                  <span className="beta-badge">
+                    <span className="k">target β</span>
+                    <span className="v num">{fmtBeta(pie.target_beta)}</span>
+                  </span>
+                  <span className="beta-badge accent">
+                    <span className="k">realised β</span>
+                    <span className="v num">{fmtBeta(pie.achieved_beta)}</span>
+                  </span>
+                </div>
+              </div>
               <Donut holdings={pie.holdings} cashWeight={pie.cash_weight}
                      capital={capital} currency={index.currency}
                      selected={selected} onSelect={setSelected} />
@@ -109,20 +110,6 @@ export default function PieApp({ index, initialPie }) {
             Pie built from data as of {asOf}. Benchmark: {index.benchmark.label}.
           </p>
         </div>
-      </main>
-
-      <footer className="site-footer">
-        <div className="inner">
-          <span>Educational simulation. No real money. Not investment advice.</span>
-          <a href="https://github.com/PRIYANSH29-boop/financeai" target="_blank"
-             rel="noreferrer">GitHub repo</a>
-          <span style={{ marginLeft: "auto" }}>Built by Priyansh Patel</span>
-        </div>
-      </footer>
-
-      {showHow && (
-        <HowItWorks steps={index.how_it_works} onClose={() => setShowHow(false)} />
-      )}
-    </>
+    </main>
   );
 }

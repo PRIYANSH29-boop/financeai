@@ -47,11 +47,20 @@ export default function Donut({ holdings, cashWeight, capital, currency, selecte
 
   const total = slices.reduce((s, x) => s + x.weight, 0) || 1;
   let angle = -Math.PI / 2;           // start at 12 o'clock
+  const LABEL_MIN = 0.05;             // only labels that comfortably fit go on the pie
+  const rMid = (R_OUT + R_IN) / 2;
   const arcs = slices.map((s) => {
     const sweep = (s.weight / total) * Math.PI * 2;
     const a0 = angle;
     angle += sweep;
-    return { ...s, d: arc(CX, CY, R_OUT, R_IN, a0, Math.max(angle - 0.004, a0 + 0.0005)) };
+    const mid = a0 + sweep / 2;
+    return {
+      ...s,
+      fitsLabel: s.weight >= LABEL_MIN,
+      lx: CX + rMid * Math.cos(mid),
+      ly: CY + rMid * Math.sin(mid),
+      d: arc(CX, CY, R_OUT, R_IN, a0, Math.max(angle - 0.004, a0 + 0.0005)),
+    };
   });
 
   const invested = 1 - cashWeight;
@@ -75,6 +84,18 @@ export default function Donut({ holdings, cashWeight, capital, currency, selecte
             <title>{`${a.label} — ${pct(a.weight)} · ${money(a.weight * capital, currency)}`}</title>
           </path>
         ))}
+
+        {/* On-slice labels (ticker + weight%) where the slice is wide enough; thin slices
+            fall through to the legend below so nothing overlaps. */}
+        {arcs.filter((a) => a.fitsLabel).map((a) => (
+          <text key={`lbl-${a.key}`} className="slice-label" x={a.lx} y={a.ly}
+                textAnchor="middle" dominantBaseline="middle"
+                opacity={selected && selected !== a.key ? 0.25 : 1}>
+            <tspan x={a.lx} dy="-0.15em">{a.label}</tspan>
+            <tspan x={a.lx} dy="1.05em" className="slice-label-pct">{pct(a.weight, 0)}</tspan>
+          </text>
+        ))}
+
         <text className="donut-centre-label" x={CX} y={CY - 18} textAnchor="middle">
           Invested
         </text>
@@ -85,6 +106,21 @@ export default function Donut({ holdings, cashWeight, capital, currency, selecte
           {holdings.length} stocks · {pct(cashWeight)} cash
         </text>
       </svg>
+
+      {/* Full legend — every slice, so thin ones (below the on-pie label threshold) are
+          still named with their exact weight. Click to select, same as the arcs. */}
+      <ul className="pie-legend">
+        {arcs.map((a) => (
+          <li key={`leg-${a.key}`}
+              className={selected && selected !== a.key ? "dim" : undefined}
+              onClick={() => onSelect(a.key)} tabIndex={0} role="button"
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onSelect(a.key)}>
+            <span className="sw" style={{ background: a.color }} />
+            <span className="leg-tk">{a.label}</span>
+            <span className="leg-wt num">{pct(a.weight, 1)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

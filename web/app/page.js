@@ -11,13 +11,14 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import PieApp from "../components/PieApp";
+import App from "../components/App";
 
-async function readBundle(rel) {
+async function readBundle(rel, { required = true } = {}) {
   const file = path.join(process.cwd(), "public", "bundle", rel);
   try {
     return JSON.parse(await readFile(file, "utf8"));
   } catch (e) {
+    if (!required) return null;   // explore.json is optional (wide universe may be absent)
     throw new Error(
       `Web bundle missing or unreadable: ${file}\n` +
       `Generate it first:  make web-bundle   (or python scripts/export_web_bundle.py)\n` +
@@ -34,5 +35,9 @@ export default async function Page() {
   const preset = index.presets?.[1] || index.presets?.[0];
   const initialPie = await readBundle(`beta/${preset.key}.json`);
 
-  return <PieApp index={index} initialPie={initialPie} />;
+  // #23 — Explore + Basket data, embedded at build time like the pie.
+  const stocks = await readBundle("stocks.json");
+  const explore = await readBundle("explore.json", { required: false });
+
+  return <App index={index} initialPie={initialPie} stocks={stocks} explore={explore} />;
 }

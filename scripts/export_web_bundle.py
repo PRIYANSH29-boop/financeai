@@ -56,9 +56,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
-from analytics.metrics import beta as _beta, equity_curve  # noqa: E402
+from analytics.metrics import (  # noqa: E402
+    beta as _beta, equity_curve, volatility, sharpe, sortino, max_drawdown, total_return,
+)
 from portfolio.beta_engine import (  # noqa: E402
-    build_portfolio, NAME_CAP, SECTOR_CAP, SECTOR_MAX_NAMES,
+    build_portfolio, _monthly_returns, MAX_LOOKBACK, MIN_HISTORY,
+    NAME_CAP, SECTOR_CAP, SECTOR_MAX_NAMES,
 )
 
 logging.basicConfig(level=logging.INFO,
@@ -76,6 +79,16 @@ PRESETS = [("Defensive", 0.50), ("Balanced", 0.75), ("Market", 1.00)]
 ABSURD_BETA = 5.0
 
 TICKERS_CSV = Path("data/sp500_tickers.csv")
+
+# Phase 23 — Explore (wide universe) + Basket (S&P scored names) data sources. All gitignored
+# build inputs; the bundle they produce IS committed, so the frontend never needs them.
+SP500_PANEL = Path("data/sp500_panel.parquet")
+MIDLARGE_PANEL = Path("data/midlarge_panel.parquet")
+MIDLARGE_UNIVERSE = Path("data/universe_midlarge.csv")
+MIDLARGE_SECTORS = Path("data/universe_midlarge_sectors.csv")
+CAP_LARGE_USD = 10_000_000_000       # ≥ $10B = large-cap, $2–10B = mid-cap (decided #23)
+MOVERS_N = 10                        # winners/losers card size
+BASKET_MIN_HISTORY = 24              # a scored name needs ≥24 monthly obs to be basket-usable
 
 # Shown verbatim in the UI's "How honest is this?" box (#19 requires these exact points).
 CAVEATS = [
@@ -288,6 +301,205 @@ def validate(payload: dict) -> list[str]:
     return errs
 
 
+def validate_stocks(s: dict) -> list[str]:
+    """stocks.json invariants — the basket page trusts this completely."""
+    errs = []
+    if not s.get("as_of"):
+        errs.append("stocks.json: missing as_of stamp")
+    n_dates = len(s.get("dates", []))
+    if n_dates == 0:
+        errs.append("stocks.json: empty date axis")
+    if len(s.get("benchmark_returns", [])) != n_dates:
+        errs.append("stocks.json: benchmark_returns length != dates length")
+    for tk, arr in s.get("returns", {}).items():
+        if len(arr) != n_dates:            # every series must align to the shared axis
+            errs.append(f"stocks.json: {tk} series length {len(arr)} != {n_dates}")
+        if tk not in s.get("stats", {}):
+            errs.append(f"stocks.json: {tk} has a series but no stats")
+    if not s.get("returns"):
+        errs.append("stocks.json: no scored stocks emitted")
+    return errs
+
+
+def validate_explore(e: dict) -> list[str]:
+    """explore.json invariants."""
+    errs = []
+    if not e.get("as_of"):
+        errs.append("explore.json: missing as_of stamp")
+    if not e.get("rows"):
+        errs.append("explore.json: no rows")
+    for r in e.get("rows", []):
+        if r.get("sector") in (None, "", "?"):
+            errs.append(f"explore.json: {r.get('ticker')} has no sector (caps plumbing #20)")
+            break
+        if r.get("cap_bucket") not in ("mid", "large"):
+            errs.append(f"explore.json: {r.get('ticker')} bad cap_bucket {r.get('cap_bucket')}")
+            break
+    mv = e.get("movers", {})
+    if not mv.get("winners"):
+        errs.append("explore.json: no winners in movers")
+    return errs
+
+
+# ------------------------------------------------------------------ #23 basket (S&P scored)
+def _fin(x):
+    """Round a float for JSON, or None if non-finite — the frontend renders None as '—'."""
+    if x is None:
+        return None
+    f = float(x)
+    return round(f, 6) if np.isfinite(f) else None
+
+
+def _stock_stats(r: pd.Series, bench: pd.Series) -> dict:
+    """Per-stock summary, analyser conventions (ddof=0, PPY=12). r, bench aligned monthly."""
+    r = r.dropna()
+    eq = equity_curve(r.to_numpy(dtype="float64"))
+    mdd, _ = max_drawdown(eq)
+    b = _beta(r, bench.reindex(r.index)) if len(r) >= 2 else float("nan")
+    return {
+        "n": int(len(r)),
+        "total_return": _fin(total_return(r)),
+        "ann_vol": _fin(volatility(r)),
+        "sharpe": _fin(sharpe(r)),
+        "sortino": _fin(sortino(r)),
+        "max_drawdown": _fin(mdd),
+        "beta": _fin(b),
+        "last_return": _fin(float(r.iloc[-1])) if len(r) else None,
+    }
+
+
+def build_stocks(scored: set[str], names: dict) -> dict:
+    """Per-stock monthly return series + summary stats for the S&P-500 SCORED names — the
+    raw material the basket page does all its math on, client-side. Shared date axis +
+    per-ticker return arrays (nulls where a name lacks that month) keeps it compact. The
+    benchmark is the equal-weight S&P proxy — identical to the pie's, so basket-vs-pie is
+    apples to apples."""
+    panel = pd.read_parquet(SP500_PANEL)
+    panel["date"] = pd.to_datetime(panel["date"])
+    rets = _monthly_returns(panel).dropna(how="all").tail(MAX_LOOKBACK)  # ≤72 month-ends
+    bench = rets.mean(axis=1, skipna=True)                               # EW S&P proxy
+    dates = [pd.Timestamp(d).strftime("%Y-%m-%d") for d in rets.index]
+
+    def arr(s: pd.Series):
+        return [None if not np.isfinite(float(v)) else round(float(v), 6) for v in s]
+
+    returns, stats = {}, {}
+    for tk in sorted(scored):
+        if tk not in rets.columns:
+            continue
+        col = rets[tk]
+        if col.dropna().shape[0] < BASKET_MIN_HISTORY:
+            continue
+        returns[tk] = arr(col.reindex(rets.index))
+        st = _stock_stats(col, bench)
+        st["name"] = names.get(tk, tk)
+        stats[tk] = st
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "as_of": dates[-1] if dates else None,
+        "benchmark_label": "equal-weight S&P-500 proxy",
+        "periods_per_year": 12,
+        "dates": dates,
+        "benchmark_returns": arr(bench),
+        "returns": returns,       # {ticker: [r0..rN] aligned to dates, null for missing}
+        "stats": stats,           # {ticker: {ann_vol, beta, sharpe, sortino, ...}}
+        "note": "Equal-weight basket math is done client-side from these series. Historical "
+                "characterisation only — never a forecast.",
+    }
+
+
+# ------------------------------------------------------------------ #23 explore (wide universe)
+def build_explore(scored: set[str]) -> dict | None:
+    """One row per wide-universe (1,200) name for the Explore tab: identity, sector (#20),
+    cap bucket, last-period return, ann vol, realised beta — all as of the bundle date, never
+    live. Returns None if the wide-universe build inputs are absent (fresh checkout without
+    `make universe`/`make sectors`); the frontend then simply hides the tab."""
+    if not (MIDLARGE_PANEL.exists() and MIDLARGE_UNIVERSE.exists() and MIDLARGE_SECTORS.exists()):
+        logger.warning("wide-universe inputs absent — skipping explore.json "
+                       "(run `make universe` + `make sectors` to enable Explore)")
+        return None
+
+    uni = pd.read_csv(MIDLARGE_UNIVERSE)
+    secmap = pd.read_csv(MIDLARGE_SECTORS).set_index("ticker")["sector"].astype(str)
+    caps = uni.set_index("ticker")["market_cap"] if "market_cap" in uni else pd.Series(dtype=float)
+    company = uni.set_index("ticker")["name"] if "name" in uni else pd.Series(dtype=object)
+
+    panel = pd.read_parquet(MIDLARGE_PANEL)
+    panel["date"] = pd.to_datetime(panel["date"])
+    rets = _monthly_returns(panel).dropna(how="all").tail(MAX_LOOKBACK)
+    bench = rets.mean(axis=1, skipna=True)
+    as_of = pd.Timestamp(rets.index[-1]).strftime("%Y-%m-%d") if len(rets.index) else None
+
+    rows = []
+    for tk in uni["ticker"]:
+        if tk not in rets.columns:
+            continue
+        r = rets[tk].dropna()
+        if r.empty:
+            continue
+        cap = float(caps.get(tk, float("nan")))
+        rows.append({
+            "ticker": tk,
+            "name": str(company.get(tk, tk)),
+            "sector": str(secmap.get(tk, "?")),
+            "cap_bucket": ("large" if np.isfinite(cap) and cap >= CAP_LARGE_USD else "mid"),
+            "market_cap": None if not np.isfinite(cap) else round(cap, 0),
+            "last_return": _fin(float(r.iloc[-1])),
+            "ann_vol": _fin(volatility(r)),
+            "beta": _fin(_beta(r, bench.reindex(r.index)) if len(r) >= 2 else float("nan")),
+            "scored": bool(tk in scored),   # only S&P-scored names are basket-eligible (B)
+        })
+
+    ranked = sorted((r for r in rows if r["last_return"] is not None),
+                    key=lambda r: r["last_return"], reverse=True)
+    movers = {"winners": ranked[:MOVERS_N],
+              "losers": list(reversed(ranked[-MOVERS_N:])) if len(ranked) >= MOVERS_N else []}
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "as_of": as_of,
+        "benchmark_label": "equal-weight wide-universe proxy (beta reference)",
+        "cap_threshold_usd": CAP_LARGE_USD,
+        "n_names": len(rows),
+        "n_scored": sum(1 for r in rows if r["scored"]),
+        "rows": rows,
+        "movers": movers,
+        "caveat": "Snapshot as of the bundle data date — NOT live/today. Small caps (<$2B) "
+                  "are excluded by universe methodology.",
+    }
+
+
+# ------------------------------------------------------------------ #23 regime beta (from #21)
+def build_regime() -> dict | None:
+    """The MEASURED calm vs stressed-core beta per preset, straight from the #21 regime
+    backtest — so the receipts caveat quotes a number, not a hand-wave. None if the lab
+    module or its data is unavailable (the frontend then shows only the generic caveat)."""
+    try:
+        from lab.regime_backtest import run as regime_run
+    except Exception as e:  # noqa: BLE001
+        logger.warning("regime beta unavailable (%s) — receipts show generic caveat only", e)
+        return None
+    try:
+        res = regime_run(make_report=False)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("regime backtest failed (%s) — skipping regime beta", e)
+        return None
+    stats, core = res["stats"], res["core_stats"]
+    label_for = {0.50: "Pie β0.50", 0.75: "Pie β0.75", 1.00: "Pie β1.00"}
+    out = {}
+    for b, label in label_for.items():
+        if label in stats:
+            out[f"{b:.2f}"] = {
+                "calm": _fin(stats[label]["calm"]["beta"]),
+                "stressed_core": _fin(core[label]["beta"]),
+                "stressed_full": _fin(stats[label]["stressed"]["beta"]),
+                "n_core": core[label]["n"],
+                "core_months": res.get("drawdown_driven_months", []),
+            }
+    return out or None
+
+
 # ------------------------------------------------------------------ main
 def export(out_dir: Path = OUT_DIR, top_n: int = 20, betas=None) -> dict:
     out_dir = Path(out_dir)
@@ -348,14 +560,35 @@ def export(out_dir: Path = OUT_DIR, top_n: int = 20, betas=None) -> dict:
         },
         "how_it_works": HOW_IT_WORKS,
         "caveats": CAVEATS,
+        "regime_beta": build_regime(),   # #21 measured calm vs stressed-core beta per preset
         "disclaimer": "Educational simulation. No real money. Not investment advice.",
     }
     (out_dir / "index.json").write_text(json.dumps(index, separators=(",", ":")))
 
+    # #23 — the S&P-500 scored universe (basket-eligible). The frozen model ranks these;
+    # it can't speak for names it never trained on, so only these get a per-stock series.
+    scored = set(names) if names else set()
+    if TICKERS_CSV.exists():
+        scored = set(pd.read_csv(TICKERS_CSV)["ticker"])
+
+    stocks = build_stocks(scored, names)
+    errors.extend(validate_stocks(stocks))
+    (out_dir / "stocks.json").write_text(json.dumps(stocks, separators=(",", ":")))
+
+    explore = build_explore(scored)
+    if explore is not None:
+        errors.extend(validate_explore(explore))
+        (out_dir / "explore.json").write_text(json.dumps(explore, separators=(",", ":")))
+
     size = sum(f.stat().st_size for f in out_dir.rglob("*.json"))
     return {"out_dir": str(out_dir), "n_betas": len(written), "errors": errors,
             "max_achievable_beta": max_beta, "bytes": size,
-            "index_bytes": (out_dir / "index.json").stat().st_size}
+            "index_bytes": (out_dir / "index.json").stat().st_size,
+            "stocks_bytes": (out_dir / "stocks.json").stat().st_size,
+            "explore_bytes": ((out_dir / "explore.json").stat().st_size
+                              if (out_dir / "explore.json").exists() else 0),
+            "n_scored": len(stocks["returns"]),
+            "n_explore": explore["n_names"] if explore else 0}
 
 
 def main() -> int:
@@ -370,9 +603,11 @@ def main() -> int:
     res = export(Path(args.out), top_n=args.top_n, betas=betas)
 
     print(f"\nwrote {res['n_betas']} beta files → {res['out_dir']}")
+    print(f"stocks.json: {res['n_scored']} scored S&P names ({res['stocks_bytes']/1024:.1f} KB)")
+    print(f"explore.json: {res['n_explore']} wide-universe rows ({res['explore_bytes']/1024:.1f} KB)")
     print(f"max achievable long-only beta (engine-computed): {res['max_achievable_beta']:.3f}")
     print(f"bundle size: {res['bytes']/1024:.1f} KB "
-          f"(index {res['index_bytes']/1024:.1f} KB)")
+          f"(index {res['index_bytes']/1024:.1f} KB) — budget ~5 MB")
     if res["errors"]:
         print(f"\n❌ {len(res['errors'])} VALIDATION ERRORS — bundle must not ship:")
         for e in res["errors"][:20]:

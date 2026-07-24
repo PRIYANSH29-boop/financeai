@@ -2,11 +2,13 @@
   "name": "rankalpha-web",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "RankAlpha pie product — static Next.js export. Educational simulation.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "npx serve out"
+    "start": "npx serve out",
+    "test": "node --test"
   },
   "dependencies": {
     "next": "15.5.4",
