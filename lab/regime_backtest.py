@@ -241,6 +241,14 @@ def run(make_report: bool = True) -> dict:
     # 6. per-book, per-regime stats
     stats = {name: regime_stats(series, bench, labels) for name, series in books.items()}
 
+    # 6b. #21 rider — the stressed-CORE: only the >10%-drawdown months (the genuine 2022
+    #     bear, n=6), reported alongside the full stressed bucket. Labelling only these as
+    #     'stressed' makes regime_stats return the core stats under its 'stressed' key.
+    core_mask = stressed_mask & trig.isin(["dd", "dd+vol"])
+    core_labels = pd.Series(np.where(core_mask, "stressed", "excl"), index=common_idx)
+    core_stats = {name: regime_stats(series, bench, core_labels)["stressed"]
+                  for name, series in books.items()}
+
     result = {
         "window": f"{common_idx.min().date()} → {common_idx.max().date()}",
         "n_months": int(len(common_idx)),
@@ -250,6 +258,7 @@ def run(make_report: bool = True) -> dict:
         "drawdown_driven_months": dd_driven,
         "regime_frame": reg,
         "stats": stats,
+        "core_stats": core_stats,
     }
     if make_report:
         result["report_path"] = str(write_report(result))
@@ -296,7 +305,10 @@ def write_report(result: dict) -> Path:
              "significance is claimed.**\n")
     L.append("* **\"Momentum (char.)\"** is re-derived through the pies' fixed-weight "
              "machinery — a sibling of the pies, **not** the #14 walk-forward realized "
-             "book.\n")
+             "book. Its numbers are valid **only as a beta-drift illustration** (near-zero "
+             "calm β → 1.5× market in stress). They are **never quotable as an achievable "
+             "return**: the calm +9.51%/mo figure is a fixed-weights-applied-backward + "
+             "survivorship artifact, not something any investor could have earned.\n")
     L.append("* **Survivorship:** today's S&P 500 members, not point-in-time.\n")
 
     L.append("## Regime calendar (committed rule)\n")
@@ -329,6 +341,24 @@ def write_report(result: dict) -> Path:
                      f"{_fmt_pct(s['vol'])} | {_fmt_dd(s['maxdd'])} | "
                      f"{_fmt_beta(s['beta'])} | {_fmt_ratio(s['hit'])} |")
         L.append("")
+
+        # #21 rider — after the full stressed bucket, break out the stressed-CORE: only the
+        # >10%-drawdown months (the genuine 2022 bear), so the reader sees the bear alone,
+        # not diluted by the always-⅓ top-vol-tercile months.
+        if reg == "stressed":
+            core_n = result["core_stats"]["EW benchmark"]["n"]
+            L.append(f"### Stressed-CORE — the {core_n} >10%-drawdown months only "
+                     "(2022 bear, no vol-tercile dilution)\n")
+            L.append(f"Months: {', '.join(result['drawdown_driven_months'])}. Even more "
+                     "directional than the full bucket — read as illustration, not evidence.\n")
+            L.append("| Book | n | Mean/mo | Vol (ann.) | MaxDD | Realised β | Hit rate |")
+            L.append("|---|---|---|---|---|---|---|")
+            for name in order:
+                s = result["core_stats"][name]
+                L.append(f"| {name} | {s['n']} | {_fmt_pct(s['mean'])} | "
+                         f"{_fmt_pct(s['vol'])} | {_fmt_dd(s['maxdd'])} | "
+                         f"{_fmt_beta(s['beta'])} | {_fmt_ratio(s['hit'])} |")
+            L.append("")
 
     # calm-β vs stressed-β — the money table
     L.append("## Calm-β vs stressed-β — the beta-drift number\n")

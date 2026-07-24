@@ -1,6 +1,6 @@
 # RankAlpha
 
-### ▶️ **[Try the live demo](https://financeai-tqrpxdxbsnqcfvrtko5one.streamlit.app/)** — no install, runs in your browser
+### ▶️ **[Try the live demo](https://financeai-tqrpxdxbsnqcfvrtko5one.streamlit.app/)** (Streamlit) · **[Build a β-pie](https://rankalpha.pages.dev)** (static β-pie product) — no install, runs in your browser
 
 **A transparent, leakage-controlled cross-sectional equity ranker for the S&P 500 — with an
 honest, self-explaining portfolio product on top.** A LightGBM LambdaMART model ranks the
@@ -14,6 +14,7 @@ on a single Linux laptop — no cloud required.
 > before trusting any number below.
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit%20Cloud-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://financeai-tqrpxdxbsnqcfvrtko5one.streamlit.app/)
+[![β-pie product](https://img.shields.io/badge/β--pie%20product-Cloudflare%20Pages-F38020?style=flat&logo=cloudflare&logoColor=white)](https://rankalpha.pages.dev)
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)
 ![LightGBM](https://img.shields.io/badge/LightGBM-LambdaMART-2ca02c?style=flat)
 ![SHAP](https://img.shields.io/badge/SHAP-explainability-9467bd?style=flat)
@@ -216,20 +217,24 @@ financeai/
 ├── requirements.txt · LICENSE · README.md · Makefile
 ```
 
-## Research track (Phases 12–18)
+## Research track (Phases 12–21)
 
 Post-ship experiments, each gated on the last. The frozen model is never refit — factors are
 combined by equal-weight percentile rank so any change is attributable to the factor itself.
+Every result — including the ones that failed — is committed as a report.
 
-| # | Experiment | Verdict |
-|---|---|---|
-| 14 | Low-volatility factor | **KEEP** — at matched vol, same return, half the drawdown |
-| 15 | Beta-targeted pie engine | Shipped — hits target beta by construction; impossible targets are capped, not faked |
-| 16 | Universe → US mid+large cap, 1,200 names (>$2B), model retrained | Pipeline retrains cleanly, **headline number rejected** — Sharpe up (1.14→1.81) but Rank IC *down* (0.0505→0.0276) |
-| 17 | Fundamentals data audit (SEC EDGAR XBRL) | **GO** — 19,513 records, 100% point-in-time, ≤2.5% cross-source discrepancy |
-| 18 | Value factor (E/P + B/M + EBITDA/EV + FCF yield) | **DROP** — uncorrelated with momentum (−0.15…−0.20) but Sharpe falls in every window |
+| # | Experiment | Verdict | Report |
+|---|---|---|---|
+| 14 | Low-volatility factor | **KEEP** — at matched vol, same return, half the drawdown | [scorecard](figures/lab/strategy_lab_scorecard.md) |
+| 15 | Beta-targeted pie engine | Shipped — hits target beta by construction; impossible targets are capped, not faked | — |
+| 16 | Universe → US mid+large cap, 1,200 names (>$2B), model retrained | Pipeline retrains cleanly, **headline number rejected** — Sharpe up (1.14→1.81) but Rank IC *down* (0.0505→0.0276) | [report](figures/lab/universe_expansion.md) |
+| 17 | Fundamentals data audit (SEC EDGAR XBRL) | **GO** — 19,513 records, 100% point-in-time, ≤2.5% cross-source discrepancy | [report](figures/audit/fundamentals_audit.md) |
+| 18 | Value factor (E/P + B/M + EBITDA/EV + FCF yield) | **DROP** — uncorrelated with momentum (−0.15…−0.20) but Sharpe falls in every window | [report](figures/lab/value_factor.md) |
+| 19 | Static β-pie web product (Next.js export) | Shipped — every UI number precomputed offline; [live](https://rankalpha.pages.dev) on Cloudflare Pages | [`web/`](web/) |
+| 20 | Wide-universe sector mapping (yfinance + SEC SIC) | Plumbing — 100% coverage; pie sector caps now **binding** (Health 7→5, Tech 6→5), no longer inert | [report](figures/lab/sector_mapping.md) |
+| 21 | Regime-segmented backtest (calm/normal/stressed) | **Beta drift measured** — β0.75 pie 0.26 calm → 0.78 stress; cash sleeve halves stressed drawdown. In-sample, 2022 sole stress episode — directional only | [report](figures/lab/regime_report.md) |
 
-Two results worth reading:
+Three results worth reading:
 
 - **#18** — an independent signal that costs risk-adjusted return is still a worse
   portfolio. *Uncorrelated* is necessary, not sufficient.
@@ -238,12 +243,19 @@ Two results worth reading:
   (2019's future ten-baggers are in the panel from day one because they clear a *today's*
   $2B screen), so the number was rejected rather than banked. The S&P 500 model remains the
   shipped one.
+- **#21** — turns the disclosed "beta rises in crashes" caveat into a measured number, and
+  publishes it even though the pies' stressed-month mean *trails* the benchmark: the cash
+  sleeve buys lower risk, not higher return. The whole book is a fixed-weights-backward
+  characterisation, not a realized track — stated at the top of the report.
 
 ```bash
-make audit      # #17 — regenerate the GO/NO-GO data-quality report (needs network)
-make value      # #18 — value factor A/B (refuses to run unless #17 says GO)
-make universe   # #16 — build the wider universe, retrain, report (needs network, slow)
-make test-all   # every unit-test suite
+make audit             # #17 — GO/NO-GO data-quality report (needs network)
+make value             # #18 — value factor A/B (refuses to run unless #17 says GO)
+make universe          # #16 — build the wider universe, retrain, report (needs network, slow)
+make sectors           # #20 — sector-map the wide universe + cap-binding report (needs network)
+make regimes-backtest  # #21 — regime-segmented backtest (offline, no refit)
+make deploy            # #19 — build web/ and publish the β-pie to Cloudflare Pages
+make test-all          # every unit-test suite
 ```
 
 ## Methodology & honesty

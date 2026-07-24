@@ -10,7 +10,7 @@
 
 * **The 2020 crash is unreachable.** Features begin **2020-06-16**, *after* the Feb–Mar 2020 crash, and the picked names' common history only starts 2021-08. The **only** measurable stress episode is the **2022 bear**. Stressed stats rest on a handful of months and are **DIRECTIONAL — no significance is claimed.**
 
-* **"Momentum (char.)"** is re-derived through the pies' fixed-weight machinery — a sibling of the pies, **not** the #14 walk-forward realized book.
+* **"Momentum (char.)"** is re-derived through the pies' fixed-weight machinery — a sibling of the pies, **not** the #14 walk-forward realized book. Its numbers are valid **only as a beta-drift illustration** (near-zero calm β → 1.5× market in stress). They are **never quotable as an achievable return**: the calm +9.51%/mo figure is a fixed-weights-applied-backward + survivorship artifact, not something any investor could have earned.
 
 * **Survivorship:** today's S&P 500 members, not point-in-time.
 
@@ -55,6 +55,18 @@ _(Sanity gate: the 2022 bear lands in 'stressed' ✅. The 2020 crash is absent b
 | Pie β1.00 | 22 | +0.84% | +25.36% | -12.61% | 1.042 | 45.5% |
 | Momentum (char.) | 22 | +2.51% | +39.28% | -25.69% | 1.524 | 54.5% |
 | EW benchmark | 22 | +0.65% | +22.14% | -13.16% | 1.000 | 45.5% |
+
+### Stressed-CORE — the 6 >10%-drawdown months only (2022 bear, no vol-tercile dilution)
+
+Months: 2022-06-30, 2022-08-31, 2022-09-30, 2022-10-31, 2022-12-31, 2023-10-31. Even more directional than the full bucket — read as illustration, not evidence.
+
+| Book | n | Mean/mo | Vol (ann.) | MaxDD | Realised β | Hit rate |
+|---|---|---|---|---|---|---|
+| Pie β0.50 | 6 | -2.03% | +11.18% | -6.97% | 0.473 | 33.3% |
+| Pie β0.75 | 6 | -3.05% | +16.78% | -10.38% | 0.709 | 33.3% |
+| Pie β1.00 | 6 | -4.07% | +22.37% | -13.85% | 0.946 | 33.3% |
+| Momentum (char.) | 6 | -6.69% | +33.47% | -22.41% | 1.489 | 16.7% |
+| EW benchmark | 6 | -3.29% | +22.29% | -11.52% | 1.000 | 16.7% |
 
 ## Calm-β vs stressed-β — the beta-drift number
 
