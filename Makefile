@@ -1,7 +1,7 @@
 # RankAlpha — convenience targets. Uses the repo venv if present.
 PY ?= $(shell [ -x venv/bin/python ] && echo venv/bin/python || echo python3)
 
-.PHONY: analyse lab regimes audit value universe test test-all
+.PHONY: analyse lab regimes audit value universe web-bundle web-dev test test-all
 
 ## Regenerate the analyser scorecard + charts from committed data (no refit, no network).
 analyse:
@@ -32,6 +32,14 @@ value:
 ## Phase 16 — mid+large-cap universe, panel, features, labels, RETRAIN, report. NEEDS NETWORK, slow.
 universe:
 	$(PY) scripts/expand_universe.py
+
+## Phase 19 — export the static web bundle (every number the frontend shows). Offline.
+web-bundle:
+	$(PY) scripts/export_web_bundle.py
+
+## Phase 19 — run the Next.js dev server (needs Node + `cd web && npm install` once).
+web-dev: web-bundle
+	cd web && npm run dev
 
 ## Run the base-analyser unit tests.
 test:

@@ -292,11 +292,23 @@ def build_portfolio(capital, target_beta, benchmark="SPY", top_n=20,
         "benchmark": bench_label,
         "weights": {tk: round(float(w), 4) for tk, w in weights.items()},
         "cash_weight": round(cash_w, 4),
+        # Unrounded weights. `weights` above is rounded to 4dp for printing, which makes a
+        # 20-name book sum to ~0.9998 — invisible in a console table, but a donut chart with
+        # a 0.02% gap is a defect. Consumers that need the sum to hold use these.
+        "weights_exact": {tk: float(w) for tk, w in weights.items()},
+        "cash_weight_exact": float(cash_w),
         "dollar_allocations": dollar_alloc,
         "slices": slices,
         "scorecard": scorecard,
         "notes": notes,
         "figures": figures,
+        # Underlying monthly series, so downstream consumers (the #19 web-bundle exporter)
+        # can derive equity/drawdown curves and window-scoped betas from the SAME numbers
+        # the scorecard was computed on, instead of rebuilding the book and risking drift.
+        # Additive only — nothing above changes.
+        "monthly_returns": port,
+        "benchmark_monthly_returns": b_win,
+        "stock_monthly_returns": common[list(weights.index)],
     }
 
 

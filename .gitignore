@@ -42,3 +42,10 @@ data/sec_cache/
 
 # Scratch space for run logs / throwaway scripts
 scratchpad/
+
+# Phase 19 web app — Node deps + build output are regenerable (`npm install`, `npm run build`)
+web/node_modules/
+web/.next/
+web/out/
+# The precomputed bundle is regenerable via `make web-bundle`; keep it out of git
+web/public/bundle/
