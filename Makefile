@@ -1,7 +1,7 @@
 # RankAlpha — convenience targets. Uses the repo venv if present.
 PY ?= $(shell [ -x venv/bin/python ] && echo venv/bin/python || echo python3)
 
-.PHONY: analyse lab regimes audit value universe web-bundle web-dev deploy test test-all
+.PHONY: analyse lab regimes regimes-backtest audit value universe web-bundle web-dev deploy test test-all
 
 ## Regenerate the analyser scorecard + charts from committed data (no refit, no network).
 analyse:
@@ -32,6 +32,11 @@ value:
 ## Phase 16 — mid+large-cap universe, panel, features, labels, RETRAIN, report. NEEDS NETWORK, slow.
 universe:
 	$(PY) scripts/expand_universe.py
+
+## Phase 21 — regime-segmented backtest: slice the committed history by market weather.
+## Offline, no refit, no prediction. Writes figures/lab/regime_report.md.
+regimes-backtest:
+	$(PY) -m lab.regime_backtest
 
 ## Phase 19 — export the static web bundle (every number the frontend shows). Offline.
 web-bundle:
