@@ -1,7 +1,7 @@
 # RankAlpha — convenience targets. Uses the repo venv if present.
 PY ?= $(shell [ -x venv/bin/python ] && echo venv/bin/python || echo python3)
 
-.PHONY: analyse lab regimes regimes-backtest audit value universe web-bundle web-dev deploy test test-all
+.PHONY: analyse lab regimes regimes-backtest audit value universe sectors web-bundle web-dev deploy test test-all
 
 ## Regenerate the analyser scorecard + charts from committed data (no refit, no network).
 analyse:
@@ -32,6 +32,13 @@ value:
 ## Phase 16 — mid+large-cap universe, panel, features, labels, RETRAIN, report. NEEDS NETWORK, slow.
 universe:
 	$(PY) scripts/expand_universe.py
+
+## Phase 20 — map a sector to every wide-universe name (yfinance A + SEC SIC B), then the
+## cap-binding report. NEEDS NETWORK (yfinance query2 + data.sec.gov); cached/resumable.
+## Writes data/universe_midlarge_sectors.csv + figures/lab/sector_mapping.md.
+sectors:
+	$(PY) -m scripts.map_sectors
+	$(PY) -m scripts.sector_report
 
 ## Phase 21 — regime-segmented backtest: slice the committed history by market weather.
 ## Offline, no refit, no prediction. Writes figures/lab/regime_report.md.

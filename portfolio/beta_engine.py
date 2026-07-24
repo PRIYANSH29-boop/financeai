@@ -86,6 +86,28 @@ def _benchmark_returns(panel: pd.DataFrame, benchmark: str):
     return proxy, f"{benchmark} (equal-weight S&P-500 proxy — SPY not in offline panel)"
 
 
+# --------------------------------------------------------------- sector map (Phase 20)
+def _load_sector_map(tickers_path) -> pd.Series:
+    """ticker -> sector, for the pie's sector caps. The S&P file carries `sector` inline;
+    the wide universe file does not, so we resolve a committed companion `<stem>_sectors.csv`
+    (produced by `scripts/map_sectors.py`). Returns an empty Series if neither exists — the
+    caller then leaves sectors as '?'. This keeps the S&P path untouched (its inline column
+    is used directly) while making the wide-universe caps active."""
+    p = Path(tickers_path)
+    try:
+        meta = pd.read_csv(p)
+    except Exception:
+        return pd.Series(dtype=object)
+    if "sector" in meta.columns:
+        return meta.set_index("ticker")["sector"].astype(str)
+    companion = p.with_name(f"{p.stem}_sectors.csv")
+    if companion.exists():
+        sec = pd.read_csv(companion)
+        if {"ticker", "sector"} <= set(sec.columns):
+            return sec.set_index("ticker")["sector"].astype(str)
+    return pd.Series(dtype=object)
+
+
 # --------------------------------------------------------------- weight caps
 def _apply_caps(w: pd.Series, sectors: pd.Series,
                 name_cap=NAME_CAP, sector_cap=SECTOR_CAP) -> pd.Series:
@@ -208,15 +230,34 @@ def build_portfolio(capital, target_beta, benchmark="SPY", top_n=20,
     if capital <= 0:
         raise ValueError("capital must be positive")
 
-    # 1. frozen scoring (cached; no refit) — gives holdings, SHAP reasons, sectors
-    book = score_book(date=date, top_n=max(top_n * 3, 50), **score_kw)
+    # 1. frozen scoring (cached; no refit) — gives holdings, SHAP reasons, sectors.
+    #    Forward panel_path so score_book estimates book-vol on the SAME universe the pie is
+    #    built on. Without this, score_book falls back to the default S&P panel and
+    #    `_book_vol` KeyErrors on wide-universe names absent from it. tickers_path is left at
+    #    the default on purpose: wide-universe sectors come back "?" and are resolved below
+    #    from the committed companion map (score_book's own sector column stays S&P-only).
+    book = score_book(date=date, top_n=max(top_n * 3, 50),
+                      panel_path=panel_path, **score_kw)
     sectors = pd.Series({tk: ex.get("sector", "?") for tk, ex in book["explanations"].items()})
 
     # 2. monthly returns + benchmark from the committed panel
     panel = pd.read_parquet(panel_path)
     panel["date"] = pd.to_datetime(panel["date"])
-    meta = pd.read_csv(tickers_path).set_index("ticker")
-    sectors = sectors.reindex(sectors.index).fillna(meta["sector"] if "sector" in meta else "?")
+
+    # Resolve sectors so the caps are active. score_book fills sectors from ITS own
+    # tickers_path (the S&P file by default): wide-universe names come back '?', and — worse —
+    # names that happen to also be in the S&P file get its GICS label ("Information
+    # Technology") while the rest get the yfinance label ("Technology"), so one real sector
+    # splits into two buckets and the ≤5-name cap is silently evaded. Fix: prefer the
+    # tickers_path sector map for EVERY name — inline `sector` (S&P) or a committed
+    # `<stem>_sectors.csv` companion (wide universe) — so one book uses one taxonomy. This is
+    # a no-op for the S&P path (its map is the same inline column score_book already used).
+    sector_map = _load_sector_map(tickers_path)
+    if not sector_map.empty:
+        sectors = pd.Series(
+            [sector_map.get(tk) or sectors.get(tk, "?") for tk in sectors.index],
+            index=sectors.index)
+    sectors = sectors.fillna("?").replace({"nan": "?", "None": "?", "": "?"})
 
     bench, bench_label = _benchmark_returns(panel, benchmark)
     cand = list(book["holdings"]["ticker"])
