@@ -1,7 +1,7 @@
 # RankAlpha — convenience targets. Uses the repo venv if present.
 PY ?= $(shell [ -x venv/bin/python ] && echo venv/bin/python || echo python3)
 
-.PHONY: analyse lab regimes audit value universe web-bundle web-dev test test-all
+.PHONY: analyse lab regimes audit value universe web-bundle web-dev deploy test test-all
 
 ## Regenerate the analyser scorecard + charts from committed data (no refit, no network).
 analyse:
@@ -40,6 +40,17 @@ web-bundle:
 ## Phase 19 — run the Next.js dev server (needs Node + `cd web && npm install` once).
 web-dev: web-bundle
 	cd web && npm run dev
+
+## Phase 19 — build the static export and deploy it to Cloudflare Pages (project: rankalpha).
+## Requires Node and a Cloudflare API token with Account · Cloudflare Pages · Edit:
+##   export CLOUDFLARE_API_TOKEN=<token>   (account id below is not secret)
+## Live at https://rankalpha.pages.dev
+CLOUDFLARE_ACCOUNT_ID ?= 1d83e7785436264464abe428a70bc94c
+deploy:
+	cd web && npm run build
+	CLOUDFLARE_ACCOUNT_ID=$(CLOUDFLARE_ACCOUNT_ID) \
+		npx --yes wrangler@latest pages deploy web/out \
+		--project-name=rankalpha --branch=main --commit-dirty=true
 
 ## Run the base-analyser unit tests.
 test:
