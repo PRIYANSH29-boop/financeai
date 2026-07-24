@@ -49,3 +49,6 @@ web/.next/
 web/out/
 # The precomputed bundle is regenerable via `make web-bundle`; keep it out of git
 web/public/bundle/
+
+# Wrangler local cache (Cloudflare Pages deploys)
+.wrangler/
