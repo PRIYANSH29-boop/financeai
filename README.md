@@ -227,7 +227,7 @@ Every result — including the ones that failed — is committed as a report.
 |---|---|---|---|
 | 14 | Low-volatility factor | **KEEP** — at matched vol, same return, half the drawdown | [scorecard](figures/lab/strategy_lab_scorecard.md) |
 | 15 | Beta-targeted pie engine | Shipped — hits target beta by construction; impossible targets are capped, not faked | — |
-| 16 | Universe → US mid+large cap, 1,200 names (>$2B), model retrained | Pipeline retrains cleanly, **headline number rejected** — Sharpe up (1.14→1.81) but Rank IC *down* (0.0505→0.0276) | [report](figures/lab/universe_expansion.md) |
+| 16 | Universe → US mid+large cap, 1,200 names (>$2B), model retrained | Pipeline retrains cleanly, **headline number rejected** — Sharpe up (1.14→1.81) but Rank IC *down* (0.0505→0.0276). #24 later found the universe silently omits ~50 multi-class large caps ([§10](LIMITATIONS.md)) | [report](figures/lab/universe_expansion.md) |
 | 17 | Fundamentals data audit (SEC EDGAR XBRL) | **GO** — 19,513 records, 100% point-in-time, ≤2.5% cross-source discrepancy | [report](figures/audit/fundamentals_audit.md) |
 | 18 | Value factor (E/P + B/M + EBITDA/EV + FCF yield) | **DROP** — uncorrelated with momentum (−0.15…−0.20) but Sharpe falls in every window | [report](figures/lab/value_factor.md) |
 | 19 | Static β-pie web product (Next.js export) | Shipped — every UI number precomputed offline; [live](https://rankalpha.pages.dev) on Cloudflare Pages | [`web/`](web/) |

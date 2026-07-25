@@ -90,6 +90,33 @@ CAP_LARGE_USD = 10_000_000_000       # ≥ $10B = large-cap, $2–10B = mid-cap 
 MOVERS_N = 10                        # winners/losers card size
 BASKET_MIN_HISTORY = 24              # a scored name needs ≥24 monthly obs to be basket-usable
 
+# Phase 24 — statistical sanity band for per-name displayed stats.
+#
+# A monthly beta of 364 or an annualised vol of 160% is not a risk measurement, it is an
+# artifact: a reorganisation spliced into one adjusted-close series (CHRD's Nov-2020
+# +30,991% month is the pre/post-bankruptcy Whiting splice), or a few months of history
+# pretending to be an estimate. The band does NOT change the numbers we display — a
+# winsorised beta shown as if measured is exactly the silent-wrong-answer this project
+# exists to avoid. It flags them, keeps them out of the default risk orderings, and bars
+# them from the basket, where a bogus beta would drive a scorecard the user acts on.
+BETA_ABS_MAX = 3.0
+ANN_VOL_MAX = 1.0
+
+# Why a name is not basket-eligible / why its stats are flagged. Exported verbatim so the
+# UI never has to invent an explanation for a name it is refusing to offer.
+FLAG_REASONS = {
+    "no_history": "no return history in the committed panel",
+    "insufficient_history": f"fewer than {BASKET_MIN_HISTORY} continuous recent monthly "
+                            f"observations",
+    "discontinuous": "gaps inside its own price history",
+    "stale_history": "no return in the most recent month — not currently tradable",
+    "beta_out_of_band": f"beta outside ±{BETA_ABS_MAX:.0f} — unreliable estimate",
+    "vol_out_of_band": f"annualised volatility above {ANN_VOL_MAX:.0%} — unreliable estimate",
+    "beta_unavailable": "beta could not be estimated",
+    "vol_unavailable": "volatility could not be estimated",
+    "not_in_model_universe": "not in the S&P-500 set the frozen model ranks",
+}
+
 # Shown verbatim in the UI's "How honest is this?" box (#19 requires these exact points).
 CAVEATS = [
     "23-month simulated track — too short to be statistically significant",
@@ -301,11 +328,29 @@ def validate(payload: dict) -> list[str]:
     return errs
 
 
+def validate_as_of(label: str, as_of, today=None) -> list[str]:
+    """An as-of stamp must exist and must not be in the future (#24).
+
+    A future as-of date is the worst kind of wrong: it is the one field a user reads to decide
+    how current everything else is, it looked plausible on the live site for a full release,
+    and nothing crashed. So the export fails on it rather than warning.
+    """
+    if not as_of:
+        return [f"{label}: missing as_of stamp"]
+    today = pd.Timestamp(today) if today is not None else pd.Timestamp.today().normalize()
+    try:
+        stamp = pd.Timestamp(as_of)
+    except (ValueError, TypeError):
+        return [f"{label}: as_of {as_of!r} is not a date"]
+    if stamp > today:
+        return [f"{label}: as_of {stamp.date()} is in the FUTURE "
+                f"(today {today.date()}) — a resampled month-end label, not a data date"]
+    return []
+
+
 def validate_stocks(s: dict) -> list[str]:
     """stocks.json invariants — the basket page trusts this completely."""
-    errs = []
-    if not s.get("as_of"):
-        errs.append("stocks.json: missing as_of stamp")
+    errs = validate_as_of("stocks.json", s.get("as_of"))
     n_dates = len(s.get("dates", []))
     if n_dates == 0:
         errs.append("stocks.json: empty date axis")
@@ -323,9 +368,7 @@ def validate_stocks(s: dict) -> list[str]:
 
 def validate_explore(e: dict) -> list[str]:
     """explore.json invariants."""
-    errs = []
-    if not e.get("as_of"):
-        errs.append("explore.json: missing as_of stamp")
+    errs = validate_as_of("explore.json", e.get("as_of"))
     if not e.get("rows"):
         errs.append("explore.json: no rows")
     for r in e.get("rows", []):
@@ -335,9 +378,56 @@ def validate_explore(e: dict) -> list[str]:
         if r.get("cap_bucket") not in ("mid", "large"):
             errs.append(f"explore.json: {r.get('ticker')} bad cap_bucket {r.get('cap_bucket')}")
             break
+    for r in e.get("rows", []):
+        # A flagged row must not be offered to the basket, and a refusal must say why.
+        if r.get("stat_quality") not in ("ok", "unreliable"):
+            errs.append(f"explore.json: {r.get('ticker')} bad stat_quality "
+                        f"{r.get('stat_quality')!r}")
+            break
+        if r.get("stat_quality") == "unreliable" and r.get("scored"):
+            errs.append(f"explore.json: {r.get('ticker')} is flagged unreliable but still "
+                        f"marked basket-eligible")
+            break
+        if not r.get("scored") and not r.get("scored_reason"):
+            errs.append(f"explore.json: {r.get('ticker')} is not scored but carries no reason")
+            break
     mv = e.get("movers", {})
     if not mv.get("winners"):
         errs.append("explore.json: no winners in movers")
+    for r in mv.get("winners", []) + mv.get("losers", []):
+        if r.get("stat_quality") != "ok":
+            errs.append(f"explore.json: mover {r.get('ticker')} has unreliable stats")
+            break
+    return errs
+
+
+def validate_scored_consistency(explore: dict, stocks: dict) -> list[str]:
+    """Every name Explore calls basket-eligible must have a series on the basket page.
+
+    This is the invariant that broke in #23: `scored` was set-membership in the S&P ticker
+    list, while `stocks.json` additionally required 24 months of history, so Q and SNDK got a
+    "basket →" button leading to a page with no data for them. Asserting it here means the
+    two files cannot drift apart again without failing the export.
+    """
+    errs = []
+    have = set(stocks.get("returns", {}))
+    claimed = {r["ticker"] for r in explore.get("rows", []) if r.get("scored")}
+    orphans = sorted(claimed - have)
+    if orphans:
+        errs.append(f"explore.json marks {len(orphans)} names basket-eligible with no series "
+                    f"in stocks.json: {', '.join(orphans[:10])}")
+    rec = explore.get("scored_reconciliation", {})
+    if rec:
+        total = (rec.get("with_explore_row", 0)
+                 + rec["dropped"]["absent_from_wide_universe"])
+        if total != rec.get("model_universe"):
+            errs.append(f"explore.json reconciliation does not add up: "
+                        f"{rec.get('with_explore_row')} with a row + "
+                        f"{rec['dropped']['absent_from_wide_universe']} absent != "
+                        f"{rec.get('model_universe')} in the model universe")
+        if rec.get("basket_eligible") != explore.get("n_scored"):
+            errs.append(f"explore.json reconciliation basket_eligible "
+                        f"{rec.get('basket_eligible')} != n_scored {explore.get('n_scored')}")
     return errs
 
 
@@ -348,6 +438,65 @@ def _fin(x):
         return None
     f = float(x)
     return round(f, 6) if np.isfinite(f) else None
+
+
+def panel_data_date(panel: pd.DataFrame) -> str:
+    """The true last DATE PRESENT IN THE DATA, e.g. '2026-06-16'.
+
+    Not the same thing as the last label on the monthly axis. `_monthly_returns` resamples
+    with `.last()` on 'ME', so a panel ending 2026-07-22 produces a final bucket *labelled*
+    2026-07-31 — a date that has not happened yet. Stamping that as the as-of date tells the
+    user the snapshot is more current than it is, and in the wide-universe case printed a
+    future month on a live page. The panel's own max date is the only honest answer.
+    """
+    return pd.Timestamp(panel["date"].max()).strftime("%Y-%m-%d")
+
+
+def band_flags(ann_vol, beta) -> list[str]:
+    """Sanity-band violations for one name's displayed risk stats. Empty list = in band."""
+    flags = []
+    if beta is None or not np.isfinite(float(beta)):
+        flags.append("beta_unavailable")
+    elif abs(float(beta)) > BETA_ABS_MAX:
+        flags.append("beta_out_of_band")
+    if ann_vol is None or not np.isfinite(float(ann_vol)):
+        flags.append("vol_unavailable")
+    elif float(ann_vol) > ANN_VOL_MAX:
+        flags.append("vol_out_of_band")
+    return flags
+
+
+def history_flags(col: pd.Series, axis_end) -> list[str]:
+    """Sufficiency + continuity of one name's monthly return series. Empty list = usable.
+
+    "≥24 observations" is counted as an unbroken run ending at the most recent month, not as
+    a total. A 2025 spinoff (SNDK: 17 months) and a name that stopped trading in 2023 are
+    both unusable, and a total-count test would pass the second one.
+    """
+    valid = col.dropna()
+    if valid.empty:
+        return ["no_history"]
+    flags = []
+    first, last = col.first_valid_index(), col.last_valid_index()
+    if int(col.loc[first:last].isna().sum()) > 0:
+        flags.append("discontinuous")
+    if last != axis_end:
+        flags.append("stale_history")
+    n_trailing = 0
+    for v in reversed(col.to_numpy(dtype="float64").tolist()):
+        if not np.isfinite(v):
+            break
+        n_trailing += 1
+    if n_trailing < BASKET_MIN_HISTORY:
+        flags.append("insufficient_history")
+    return flags
+
+
+def reason_text(flags: list[str]) -> str | None:
+    """Human-readable 'why not' for a list of flags, or None when there is nothing to say."""
+    if not flags:
+        return None
+    return "; ".join(FLAG_REASONS.get(f, f) for f in flags)
 
 
 def _stock_stats(r: pd.Series, bench: pd.Series) -> dict:
@@ -373,48 +522,81 @@ def build_stocks(scored: set[str], names: dict) -> dict:
     raw material the basket page does all its math on, client-side. Shared date axis +
     per-ticker return arrays (nulls where a name lacks that month) keeps it compact. The
     benchmark is the equal-weight S&P proxy — identical to the pie's, so basket-vs-pie is
-    apples to apples."""
+    apples to apples.
+
+    #24: eligibility is gated here and NOWHERE ELSE, and every refusal is recorded with its
+    reason in `excluded`. The Explore tab consumes this same decision, so the table can never
+    again offer a "basket →" button for a name the basket page has no series for.
+    """
     panel = pd.read_parquet(SP500_PANEL)
     panel["date"] = pd.to_datetime(panel["date"])
     rets = _monthly_returns(panel).dropna(how="all").tail(MAX_LOOKBACK)  # ≤72 month-ends
     bench = rets.mean(axis=1, skipna=True)                               # EW S&P proxy
     dates = [pd.Timestamp(d).strftime("%Y-%m-%d") for d in rets.index]
+    axis_end = rets.index[-1] if len(rets.index) else None
 
     def arr(s: pd.Series):
         return [None if not np.isfinite(float(v)) else round(float(v), 6) for v in s]
 
-    returns, stats = {}, {}
+    returns, stats, excluded = {}, {}, {}
     for tk in sorted(scored):
         if tk not in rets.columns:
+            excluded[tk] = {"flags": ["no_history"],
+                            "reason": FLAG_REASONS["no_history"]}
             continue
         col = rets[tk]
-        if col.dropna().shape[0] < BASKET_MIN_HISTORY:
+        flags = history_flags(col, axis_end)
+        st = _stock_stats(col, bench)
+        flags = flags + band_flags(st["ann_vol"], st["beta"])
+        if flags:
+            excluded[tk] = {"flags": flags, "reason": reason_text(flags)}
             continue
         returns[tk] = arr(col.reindex(rets.index))
-        st = _stock_stats(col, bench)
         st["name"] = names.get(tk, tk)
         stats[tk] = st
 
     return {
         "schema_version": SCHEMA_VERSION,
-        "as_of": dates[-1] if dates else None,
+        # The true last data date, not the month-end bucket label (#24).
+        "as_of": panel_data_date(panel),
+        "axis_end_label": dates[-1] if dates else None,
+        "axis_last_month_partial": bool(
+            axis_end is not None and pd.Timestamp(panel["date"].max()) < axis_end),
         "benchmark_label": "equal-weight S&P-500 proxy",
         "periods_per_year": 12,
         "dates": dates,
         "benchmark_returns": arr(bench),
         "returns": returns,       # {ticker: [r0..rN] aligned to dates, null for missing}
         "stats": stats,           # {ticker: {ann_vol, beta, sharpe, sortino, ...}}
+        "excluded": excluded,     # {ticker: {flags, reason}} — why a scored name is absent
+        "eligibility": {
+            "min_history_months": BASKET_MIN_HISTORY,
+            "beta_abs_max": BETA_ABS_MAX,
+            "ann_vol_max": ANN_VOL_MAX,
+            "text": f"A name is basket-eligible only with ≥{BASKET_MIN_HISTORY} unbroken "
+                    f"recent monthly returns, |beta| ≤ {BETA_ABS_MAX:.0f} and annualised "
+                    f"volatility ≤ {ANN_VOL_MAX:.0%}.",
+        },
         "note": "Equal-weight basket math is done client-side from these series. Historical "
-                "characterisation only — never a forecast.",
+                "characterisation only — never a forecast. The final month may be partial: "
+                "see axis_last_month_partial.",
     }
 
 
 # ------------------------------------------------------------------ #23 explore (wide universe)
-def build_explore(scored: set[str]) -> dict | None:
+def build_explore(eligible: set[str], model_universe: set[str],
+                  exclusions: dict) -> dict | None:
     """One row per wide-universe (1,200) name for the Explore tab: identity, sector (#20),
     cap bucket, last-period return, ann vol, realised beta — all as of the bundle date, never
     live. Returns None if the wide-universe build inputs are absent (fresh checkout without
-    `make universe`/`make sectors`); the frontend then simply hides the tab."""
+    `make universe`/`make sectors`); the frontend then simply hides the tab.
+
+    `eligible` is the basket-eligible set decided by `build_stocks` — this function does not
+    get its own opinion about eligibility, which is what keeps the two files consistent.
+    Stats displayed here are measured on the WIDE panel against the wide-universe benchmark,
+    so they are sanity-banded here too: a row can be flagged `unreliable` for display while
+    the same name remains basket-eligible on the S&P panel, and both statements are true.
+    """
     if not (MIDLARGE_PANEL.exists() and MIDLARGE_UNIVERSE.exists() and MIDLARGE_SECTORS.exists()):
         logger.warning("wide-universe inputs absent — skipping explore.json "
                        "(run `make universe` + `make sectors` to enable Explore)")
@@ -429,16 +611,44 @@ def build_explore(scored: set[str]) -> dict | None:
     panel["date"] = pd.to_datetime(panel["date"])
     rets = _monthly_returns(panel).dropna(how="all").tail(MAX_LOOKBACK)
     bench = rets.mean(axis=1, skipna=True)
-    as_of = pd.Timestamp(rets.index[-1]).strftime("%Y-%m-%d") if len(rets.index) else None
+    axis_end = rets.index[-1] if len(rets.index) else None
 
     rows = []
     for tk in uni["ticker"]:
         if tk not in rets.columns:
             continue
-        r = rets[tk].dropna()
+        col = rets[tk]
+        r = col.dropna()
         if r.empty:
             continue
         cap = float(caps.get(tk, float("nan")))
+        ann_vol = _fin(volatility(r))
+        bta = _fin(_beta(r, bench.reindex(r.index)) if len(r) >= 2 else float("nan"))
+        # Display band (measured on THIS panel) + basket eligibility (decided on the S&P
+        # panel). A row is only offered to the basket if it passes both.
+        bflags = band_flags(ann_vol, bta)
+        hflags = history_flags(col, axis_end)
+        is_eligible = bool(tk in eligible) and not bflags
+        # Every reason that applies, not just the first one found. A name can be both outside
+        # the model's universe AND carrying a junk beta, and "not scored by the model" alone
+        # would leave the user thinking the 364 in the beta column is a real measurement.
+        why_parts = []
+        if tk not in model_universe:
+            why_parts.append(FLAG_REASONS["not_in_model_universe"])
+        elif tk not in eligible:
+            why_parts.append(exclusions.get(tk, {}).get("reason")
+                             or reason_text(hflags + bflags) or "")
+        if bflags:
+            why_parts.append(reason_text(bflags))
+        # The S&P-panel refusal may already name the same band violation the wide panel sees;
+        # say each clause once, in the order it was added.
+        seen, clauses = set(), []
+        for part in why_parts:
+            for clause in (part or "").split("; "):
+                if clause and clause not in seen:
+                    seen.add(clause)
+                    clauses.append(clause)
+        why = "; ".join(clauses) or None
         rows.append({
             "ticker": tk,
             "name": str(company.get(tk, tk)),
@@ -446,27 +656,99 @@ def build_explore(scored: set[str]) -> dict | None:
             "cap_bucket": ("large" if np.isfinite(cap) and cap >= CAP_LARGE_USD else "mid"),
             "market_cap": None if not np.isfinite(cap) else round(cap, 0),
             "last_return": _fin(float(r.iloc[-1])),
-            "ann_vol": _fin(volatility(r)),
-            "beta": _fin(_beta(r, bench.reindex(r.index)) if len(r) >= 2 else float("nan")),
-            "scored": bool(tk in scored),   # only S&P-scored names are basket-eligible (B)
+            "ann_vol": ann_vol,
+            "beta": bta,
+            # Numbers above are NEVER winsorised. This says "do not trust them", and the UI
+            # keeps flagged rows out of the default beta/vol orderings.
+            "stat_quality": "unreliable" if bflags else "ok",
+            "stat_flags": bflags,
+            "stat_note": reason_text(bflags),
+            "n_months": int(len(r)),
+            "scored": is_eligible,
+            "scored_reason": why,
         })
 
-    ranked = sorted((r for r in rows if r["last_return"] is not None),
-                    key=lambda r: r["last_return"], reverse=True)
+    # Movers rank on last-month return, which the band does not police — but a row whose
+    # stats are junk has no business fronting the page, so flagged rows are excluded from
+    # the cards and the count says so.
+    clean = [r for r in rows if r["last_return"] is not None and r["stat_quality"] == "ok"]
+    ranked = sorted(clean, key=lambda r: r["last_return"], reverse=True)
     movers = {"winners": ranked[:MOVERS_N],
-              "losers": list(reversed(ranked[-MOVERS_N:])) if len(ranked) >= MOVERS_N else []}
+              "losers": list(reversed(ranked[-MOVERS_N:])) if len(ranked) >= MOVERS_N else [],
+              "excluded_unreliable": sum(1 for r in rows if r["stat_quality"] != "ok"),
+              "note": "Ranked on last-month return across rows whose risk stats pass the "
+                      "sanity band."}
 
+    row_tickers = {r["ticker"] for r in rows}
     return {
         "schema_version": SCHEMA_VERSION,
-        "as_of": as_of,
+        # True last data date — never the resampled month-end label, which is in the future
+        # for any panel that ends mid-month (#24).
+        "as_of": panel_data_date(panel),
+        "axis_end_label": (pd.Timestamp(axis_end).strftime("%Y-%m-%d") if axis_end is not None
+                           else None),
+        "axis_last_month_partial": bool(
+            axis_end is not None and pd.Timestamp(panel["date"].max()) < axis_end),
         "benchmark_label": "equal-weight wide-universe proxy (beta reference)",
         "cap_threshold_usd": CAP_LARGE_USD,
         "n_names": len(rows),
         "n_scored": sum(1 for r in rows if r["scored"]),
+        "n_unreliable": sum(1 for r in rows if r["stat_quality"] != "ok"),
+        "sanity_band": {"beta_abs_max": BETA_ABS_MAX, "ann_vol_max": ANN_VOL_MAX,
+                        "text": f"Rows with |beta| > {BETA_ABS_MAX:.0f} or annualised "
+                                f"volatility > {ANN_VOL_MAX:.0%} are flagged, kept out of "
+                                f"the default risk orderings, and not basket-eligible. The "
+                                f"displayed figures are the measured ones, unaltered."},
+        "scored_reconciliation": _reconcile(model_universe, row_tickers, eligible,
+                                            exclusions, rows),
         "rows": rows,
         "movers": movers,
         "caveat": "Snapshot as of the bundle data date — NOT live/today. Small caps (<$2B) "
                   "are excluded by universe methodology.",
+    }
+
+
+def _reconcile(model_universe: set[str], row_tickers: set[str], eligible: set[str],
+               exclusions: dict, rows: list[dict]) -> dict:
+    """The audited funnel from "the model ranks 503 names" to the number Explore shows.
+
+    #24 asked where ~50 names went between the S&P set and `n_scored`. Almost all of them
+    never reach Explore at all: they are missing from the wide-universe market-cap screen
+    because `universe.shares_outstanding` reads the SEC XBRL *frames* API, which returns only
+    undimensioned facts — and multi-class filers tag share counts per share class, so GOOGL,
+    META, BRK-B, V, MA, F and ~44 others have no share count in the frame and were dropped
+    before the price screen ever ran. See `universe.py` (fixed there for future builds; the
+    shipped panel predates the fix and still omits them).
+    """
+    in_wide = model_universe & row_tickers
+    missing_wide = sorted(model_universe - row_tickers)
+    band_dropped = sorted(r["ticker"] for r in rows
+                          if r["ticker"] in eligible and r["stat_quality"] != "ok")
+    hist_dropped = sorted(tk for tk in in_wide
+                          if tk not in eligible and tk in exclusions)
+    return {
+        "model_universe": len(model_universe),
+        "with_explore_row": len(in_wide),
+        "basket_eligible": len(in_wide & eligible) - len(band_dropped),
+        "eligible_without_explore_row": len(eligible - row_tickers),
+        "dropped": {
+            "absent_from_wide_universe": len(missing_wide),
+            "failed_history_or_stats_on_sp_panel": len(hist_dropped),
+            "failed_wide_panel_sanity_band": len(band_dropped),
+        },
+        "absent_from_wide_universe_tickers": missing_wide,
+        "failed_history_tickers": hist_dropped,
+        "failed_band_tickers": band_dropped,
+        "why_absent_from_wide_universe":
+            "The wide universe screens SEC registrants for a share count via the XBRL "
+            "`frames` API, which only returns facts carrying no dimensions. Multi-class "
+            "filers tag EntityCommonStockSharesOutstanding per share class, so their share "
+            "count is invisible to that endpoint and they were dropped before the market-cap "
+            "filter ran. This is a universe-construction bug, not a data-quality property of "
+            "the names — it is fixed in `universe.py` for future builds, and the shipped "
+            "panel still predates the fix.",
+        "note": f"{len(eligible - row_tickers)} basket-eligible names have no Explore row at "
+                f"all, for the same reason — the Basket tab reaches them, the table does not.",
     }
 
 
@@ -563,21 +845,27 @@ def export(out_dir: Path = OUT_DIR, top_n: int = 20, betas=None) -> dict:
         "regime_beta": build_regime(),   # #21 measured calm vs stressed-core beta per preset
         "disclaimer": "Educational simulation. No real money. Not investment advice.",
     }
+    errors.extend(validate_as_of("index.json", index["as_of"]))
     (out_dir / "index.json").write_text(json.dumps(index, separators=(",", ":")))
 
     # #23 — the S&P-500 scored universe (basket-eligible). The frozen model ranks these;
     # it can't speak for names it never trained on, so only these get a per-stock series.
-    scored = set(names) if names else set()
+    model_universe = set(names) if names else set()
     if TICKERS_CSV.exists():
-        scored = set(pd.read_csv(TICKERS_CSV)["ticker"])
+        model_universe = set(pd.read_csv(TICKERS_CSV)["ticker"])
 
-    stocks = build_stocks(scored, names)
+    stocks = build_stocks(model_universe, names)
     errors.extend(validate_stocks(stocks))
     (out_dir / "stocks.json").write_text(json.dumps(stocks, separators=(",", ":")))
+    eligible = set(stocks["returns"])
+    logger.info("basket-eligible: %d of %d model-universe names (%d refused: %s)",
+                len(eligible), len(model_universe), len(stocks["excluded"]),
+                ", ".join(sorted(stocks["excluded"])[:8]) or "none")
 
-    explore = build_explore(scored)
+    explore = build_explore(eligible, model_universe, stocks["excluded"])
     if explore is not None:
         errors.extend(validate_explore(explore))
+        errors.extend(validate_scored_consistency(explore, stocks))
         (out_dir / "explore.json").write_text(json.dumps(explore, separators=(",", ":")))
 
     size = sum(f.stat().st_size for f in out_dir.rglob("*.json"))
@@ -588,6 +876,11 @@ def export(out_dir: Path = OUT_DIR, top_n: int = 20, betas=None) -> dict:
             "explore_bytes": ((out_dir / "explore.json").stat().st_size
                               if (out_dir / "explore.json").exists() else 0),
             "n_scored": len(stocks["returns"]),
+            "n_refused": len(stocks["excluded"]),
+            "reconciliation": (explore or {}).get("scored_reconciliation"),
+            "n_unreliable": (explore or {}).get("n_unreliable", 0),
+            "as_of": {"index": index["as_of"], "stocks": stocks["as_of"],
+                      "explore": (explore or {}).get("as_of")},
             "n_explore": explore["n_names"] if explore else 0}
 
 
@@ -603,8 +896,19 @@ def main() -> int:
     res = export(Path(args.out), top_n=args.top_n, betas=betas)
 
     print(f"\nwrote {res['n_betas']} beta files → {res['out_dir']}")
-    print(f"stocks.json: {res['n_scored']} scored S&P names ({res['stocks_bytes']/1024:.1f} KB)")
-    print(f"explore.json: {res['n_explore']} wide-universe rows ({res['explore_bytes']/1024:.1f} KB)")
+    print(f"as-of stamps: index {res['as_of']['index']} · stocks {res['as_of']['stocks']} "
+          f"· explore {res['as_of']['explore']}  (all must be <= today)")
+    print(f"stocks.json: {res['n_scored']} basket-eligible S&P names, {res['n_refused']} "
+          f"refused ({res['stocks_bytes']/1024:.1f} KB)")
+    print(f"explore.json: {res['n_explore']} wide-universe rows, {res['n_unreliable']} "
+          f"flagged unreliable ({res['explore_bytes']/1024:.1f} KB)")
+    rec = res.get("reconciliation")
+    if rec:
+        print(f"  scored funnel: {rec['model_universe']} model universe → "
+              f"{rec['with_explore_row']} with an Explore row → "
+              f"{rec['basket_eligible']} basket-eligible")
+        for k, v in rec["dropped"].items():
+            print(f"    - {v:3d} dropped: {k}")
     print(f"max achievable long-only beta (engine-computed): {res['max_achievable_beta']:.3f}")
     print(f"bundle size: {res['bytes']/1024:.1f} KB "
           f"(index {res['index_bytes']/1024:.1f} KB) — budget ~5 MB")

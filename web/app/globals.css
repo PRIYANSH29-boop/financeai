@@ -297,6 +297,10 @@ details.expander > .body { padding: 0 20px 20px; }
 .explore-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .explore-table .cell-name { color: var(--text-muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .explore-table tr.not-scored { opacity: 0.62; }
+/* #24 — an out-of-band beta/vol is shown as measured, never adjusted, but it must not read
+   as a trustworthy number. Dotted underline + ⚠, both carrying the reason as a tooltip. */
+.stat-warn { color: var(--loss); cursor: help; }
+.explore-table td.stat-shaky { color: var(--loss); text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
 .chip.tiny { padding: 2px 8px; font-size: 0.72rem; }
 
 /* --- Basket (Module B) --- */

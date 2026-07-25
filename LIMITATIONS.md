@@ -89,7 +89,31 @@ issues, all documented in `figures/audit/fundamentals_audit.md`:
 - The audit says nothing about survivorship — that caveat is about which *tickers* are in the
   list (§1), not about the data behind them.
 
-## 10. Other
+## 10. The wide universe is missing ~50 multi-class large caps (found in #24)
+The 1,200-name mid+large-cap universe (#16) screens SEC registrants for a share count via the
+XBRL **frames** API, which returns only facts carrying **no dimensions**. Multi-class filers tag
+`dei:EntityCommonStockSharesOutstanding` per share class, so **Alphabet, Meta, Berkshire, Visa,
+Mastercard, Ford, Comcast, Accenture, Nike, UPS and ~42 others have no share count in the
+frame** and were dropped before the market-cap filter ever ran. The universe therefore holds
+**451 of the 503 S&P 500 names**, not ~500, and the omission is non-random: it removes a
+specific class of very large, mostly founder- or family-controlled companies.
+
+What this does and does not affect:
+- **Explore tab** — those names have no row. The site now states the count, the cause, and
+  which tickers are missing rather than presenting 451 as if it were the whole S&P set.
+- **#16 retrained model and its Sharpe / Rank IC** — computed on the affected universe, so the
+  cross-section it ranked was missing those names. #16's headline was already rejected on
+  survivorship grounds; this is a second, independent reason not to bank it.
+- **The shipped S&P 500 model, the pie engine, and every number in the scorecard** — unaffected.
+  They run off `data/sp500_panel.parquet` and the full 503-name ticker list, which never went
+  through this screen.
+
+`universe.py` is fixed (the gap is reported, persisted to `universe_share_gap.csv`, and
+recovered from the price provider with `shares_source` tagged), but the **shipped panel predates
+the fix** — closing it for real needs a universe + panel + feature + sector rebuild, which is
+its own phase, not a hotfix.
+
+## 11. Other
 - Daily-bar `fwd_ret_1m` uses a per-ticker 21-row shift; tickers with missing days have a
   slightly irregular forward window. Minor at the panel level.
 - No hyperparameter tuning was done (deliberately, to avoid overfitting the test window), so

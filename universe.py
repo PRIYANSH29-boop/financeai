@@ -16,6 +16,20 @@ How the universe is built (all from sources reachable without a paid key)
 2. **Share counts** — SEC XBRL `frames` API for `dei:EntityCommonStockSharesOutstanding`,
    most recent frame per CIK. One request per quarterly frame covers every filer at once,
    instead of one request per name.
+
+   ⚠️ **The frames API only returns facts that carry no dimensions**, and multi-class filers
+   tag their share count *per share class*. So Alphabet, Meta, Berkshire, Visa, Mastercard,
+   Ford, Comcast — roughly 50 S&P 500 members — have **no** share count in any frame, and
+   the pre-#24 build dropped every one of them silently on an inner join. That is why the
+   shipped 1,200-name universe contains 451 of the 503 S&P names rather than ~500. Two
+   things changed in #24: `candidates()` now returns the dropped names instead of discarding
+   them (persisted to `universe_share_gap.csv`, counted in `universe_stats.json`), and
+   `fallback_shares()` recovers a share count for the liquid ones so they survive the
+   screen. Per-class counts are unavailable from XBRL entirely — companyconcept 404s for
+   Alphabet and Meta, and Berkshire's only undimensioned share fact is a stale 2015
+   Class-A-equivalent — so the fallback is a listed-class count from the price provider,
+   tagged in `shares_source`. That is the right basis for a per-ticker universe anyway:
+   this row is GOOGL-the-listing at GOOGL's price.
 3. **Prices and liquidity** — yfinance, a short recent window: last close and median dollar
    volume. Names with no recent trading are dropped (delisted / halted).
 4. **Filters** — market cap = shares × last close > `MIN_MARKET_CAP` ($2B); price > $1
@@ -52,7 +66,9 @@ FRAMES_URL = ("https://data.sec.gov/api/xbrl/frames/dei/"
 # fiscal quarter end, so several are needed to cover every fiscal calendar.
 DEFAULT_FRAMES = ["CY2026Q1I", "CY2025Q4I", "CY2025Q3I", "CY2025Q2I", "CY2025Q1I"]
 
-EXCHANGES = {"NYSE", "Nasdaq", "NYSE American", "NYSEAmerican", "NYSE MKT"}
+# "CBOE" appears as an exchange in SEC's map for 27 tickers, CBOE itself among them; leaving
+# it out excluded a real S&P 500 constituent for no methodological reason (#24).
+EXCHANGES = {"NYSE", "Nasdaq", "NYSE American", "NYSEAmerican", "NYSE MKT", "CBOE"}
 
 MIN_MARKET_CAP = 2e9          # the #16 spec: mid + large cap
 MIN_PRICE = 1.0
@@ -94,8 +110,14 @@ def shares_outstanding(client: SECClient | None = None, frames=DEFAULT_FRAMES,
 
 
 # ------------------------------------------------------------------ candidates
-def candidates(client: SECClient | None = None) -> pd.DataFrame:
-    """Exchange-listed registrants with a share count: ticker, cik, name, exchange, shares."""
+def candidates(client: SECClient | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Exchange-listed registrants, split into those WITH and those WITHOUT a share count.
+
+    Returns `(with_shares, without_shares)`. The second frame is the whole point: before #24
+    this function inner-joined the share counts and returned only the survivors, so the ~50
+    multi-class S&P 500 filers that XBRL frames cannot see left no trace at all. A universe
+    builder that cannot say which names it dropped, and why, cannot be audited.
+    """
     client = client or SECClient()
     cmap = client.cik_candidates()
     rows = []
@@ -107,11 +129,42 @@ def candidates(client: SECClient | None = None) -> pd.DataFrame:
                 break
     listed = pd.DataFrame(rows)
     sh = shares_outstanding(client)
-    out = listed.merge(sh[["cik", "shares", "as_of"]], on="cik", how="inner")
+    out = listed.merge(sh[["cik", "shares", "as_of"]], on="cik", how="left")
     out["shares"] = pd.to_numeric(out["shares"], errors="coerce")
-    out = out[out["shares"] > 0]
-    logger.info("candidates: %d exchange-listed registrants with a share count", len(out))
-    return out.reset_index(drop=True)
+
+    have = out["shares"] > 0
+    with_shares = out[have].copy()
+    with_shares["shares_source"] = "sec_xbrl_frames"
+    gap = out[~have].drop(columns=["shares", "as_of"]).copy()
+    logger.info("candidates: %d exchange-listed registrants with an SEC share count, "
+                "%d without (multi-class filers are invisible to the frames API)",
+                len(with_shares), len(gap))
+    return with_shares.reset_index(drop=True), gap.reset_index(drop=True)
+
+
+def fallback_shares(tickers, batch: int = 1) -> pd.DataFrame:
+    """{ticker, shares} from the price provider, for names SEC frames cannot supply.
+
+    Used ONLY for the share-count gap above. yfinance reports the *listed class's* shares
+    outstanding (GOOGL → 5.87B Class A, not the 12.2B A+B+C aggregate), which is the correct
+    basis for a per-ticker universe: this row is GOOGL-the-listing at GOOGL's price. Every
+    recovered name is tagged `shares_source="price_provider"` so a later audit can separate
+    SEC-sourced market caps from provider-sourced ones.
+    """
+    import yfinance as yf
+    rows = []
+    for tk in sorted(set(tickers)):
+        try:
+            so = yf.Ticker(tk).get_info().get("sharesOutstanding")
+        except Exception as e:                           # noqa: BLE001
+            logger.debug("fallback shares failed for %s: %s", tk, e)
+            continue
+        so = pd.to_numeric(so, errors="coerce")
+        if so and np.isfinite(so) and so > 0:
+            rows.append({"ticker": tk, "shares": float(so)})
+    logger.info("fallback share counts: recovered %d of %d names from the price provider",
+                len(rows), len(set(tickers)))
+    return pd.DataFrame(rows, columns=["ticker", "shares"])
 
 
 # ------------------------------------------------------------------ market data screen
@@ -149,12 +202,38 @@ def market_screen(tickers, lookback_days: int = 90, batch: int = 200) -> pd.Data
 # ------------------------------------------------------------------ build
 def build_universe(min_market_cap: float = MIN_MARKET_CAP, max_names: int = DEFAULT_MAX_NAMES,
                    min_price: float = MIN_PRICE, min_dollar_volume: float = MIN_DOLLAR_VOLUME,
-                   client: SECClient | None = None, out: Path | None = UNIVERSE_PATH) -> dict:
+                   client: SECClient | None = None, out: Path | None = UNIVERSE_PATH,
+                   recover_share_gap: bool = True) -> dict:
     """Build the mid+large-cap universe and return {universe, stats} with filter counts."""
-    cand = candidates(client)
-    scr = market_screen(cand["ticker"].tolist())
+    cand, gap = candidates(client)
+
+    # One price screen covers both cohorts — the names with an SEC share count and the gap —
+    # so recovering the gap costs no extra price downloads, only the per-name share lookups.
+    screen_for = cand["ticker"].tolist() + (gap["ticker"].tolist() if recover_share_gap else [])
+    scr = market_screen(screen_for)
+
+    # The gap is pre-filtered on price and liquidity, so only plausible names cost a per-name
+    # request. Most of the ~2,300 registrants without an SEC share count are tiny or barely
+    # traded and would fail the $2B floor regardless; the ones that matter are the multi-class
+    # large caps, and they clear the liquidity pre-filter comfortably.
+    recovered = pd.DataFrame(columns=["ticker", "shares"])
+    if recover_share_gap and len(gap):
+        gap_scr = scr[scr["ticker"].isin(set(gap["ticker"]))]
+        liquid = gap_scr[(gap_scr["last_close"] >= min_price)
+                         & (gap_scr["median_dollar_volume"] >= min_dollar_volume)]
+        recovered = fallback_shares(liquid["ticker"].tolist())
+        if len(recovered):
+            add = gap.merge(recovered, on="ticker", how="inner")
+            add["as_of"] = pd.NaT
+            add["shares_source"] = "price_provider"
+            cand = pd.concat([cand, add], ignore_index=True)
+
     df = cand.merge(scr, on="ticker", how="inner")
-    stats = {"registrants_listed_with_shares": len(cand), "with_market_data": len(df)}
+    stats = {"registrants_listed_with_shares": int((cand["shares_source"]
+                                                    == "sec_xbrl_frames").sum()),
+             "share_count_gap": len(gap),
+             "share_count_recovered_from_price_provider": len(recovered),
+             "with_market_data": len(df)}
 
     df["market_cap"] = df["shares"] * df["last_close"]
     steps = [
@@ -182,10 +261,15 @@ def build_universe(min_market_cap: float = MIN_MARKET_CAP, max_names: int = DEFA
     stats["min_market_cap"] = float(df["market_cap"].min())
     stats["total_market_cap"] = float(df["market_cap"].sum())
     stats["built_as_of"] = str(pd.Timestamp.today().date())
+    stats["shares_source_counts"] = {k: int(v) for k, v in
+                                     df["shares_source"].value_counts().items()}
 
     if out is not None:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out, index=False)
+        # The names that never got a share count, kept next to the universe: this is the
+        # artifact whose absence let the multi-class drop hide for four phases.
+        gap.to_csv(Path(out).with_name("universe_share_gap.csv"), index=False)
         # The filter funnel is the audit trail for the universe — keep it next to the list
         # so a later report can show what was screened out rather than just what survived.
         Path(out).with_name("universe_stats.json").write_text(json.dumps(stats, indent=2))

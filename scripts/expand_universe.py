@@ -252,6 +252,15 @@ def write_report(new: dict, old: dict, stats: dict, out: Path = OUT_MD) -> Path:
           "decile gets to hold 2019's future ten-baggers. The S&P 500 panel has the same "
           "disease; this universe has a much larger dose, which is the first thing to "
           "suspect about any headline number in §2.",
+          "- **~50 multi-class large caps are MISSING from this universe (found in #24).** "
+          "The share-count screen reads SEC's XBRL `frames` API, which returns only "
+          "undimensioned facts; multi-class filers tag shares per share class, so Alphabet, "
+          "Meta, Berkshire, Visa, Mastercard, Ford, Comcast and ~44 others had no share count "
+          "and were dropped before the market-cap filter ran. Only 451 of the 503 S&P 500 "
+          "names are present. The omission is non-random — it removes very large, mostly "
+          "founder/family-controlled companies — so the cross-section this model was retrained "
+          "on is not the one the §1 funnel describes. `universe.py` is fixed; a rebuilt panel "
+          "is required for the numbers above to reflect it. See LIMITATIONS §10.",
           "- **Foreign issuers are included** — US-listed ADRs (e.g. AMBEV, Abivax) pass an "
           "exchange + market-cap screen. A US-domicile filter would change the field.",
           "- **Short history for younger names**: features need 253 trading days, so the "
