@@ -59,6 +59,7 @@ import pandas as pd  # noqa: E402
 from analytics.metrics import (  # noqa: E402
     beta as _beta, equity_curve, volatility, sharpe, sortino, max_drawdown, total_return,
 )
+from universe import is_non_equity  # noqa: E402
 from portfolio.beta_engine import (  # noqa: E402
     build_portfolio, _monthly_returns, MAX_LOOKBACK, MIN_HISTORY,
     NAME_CAP, SECTOR_CAP, SECTOR_MAX_NAMES,
@@ -603,6 +604,23 @@ def build_explore(eligible: set[str], model_universe: set[str],
         return None
 
     uni = pd.read_csv(MIDLARGE_UNIVERSE)
+
+    # Explore is a STOCK explorer. Index/commodity/crypto trusts are registrants with a price
+    # and a share count, so they cleared the universe screens and have been rendering as rows on
+    # the live site — GLD, SLV, IBIT, GBTC and friends listed as if they were companies. They
+    # were never basket-eligible (not in the S&P set the frozen model ranks), so nothing could
+    # trade them, but showing a bitcoin trust in a stock table is a wrong answer with no error.
+    # `universe.py` excludes them at build time; this is the belt-and-braces filter so a bundle
+    # exported from ANY universe artifact — including one built before that fix — is clean.
+    sic_cache = Path("data/cache/sector_sic_cache.json")
+    sics = (uni["cik"].astype(str).map(json.loads(sic_cache.read_text()))
+            if sic_cache.exists() and "cik" in uni.columns else None)
+    non_eq = is_non_equity(uni["name"], sics) if "name" in uni.columns else None
+    if non_eq is not None and int(non_eq.sum()):
+        logger.info("explore: filtering %d non-equity issuers (funds/commodity/crypto trusts): %s",
+                    int(non_eq.sum()), sorted(uni.loc[non_eq, "ticker"].tolist()))
+        uni = uni[~non_eq]
+
     secmap = pd.read_csv(MIDLARGE_SECTORS).set_index("ticker")["sector"].astype(str)
     caps = uni.set_index("ticker")["market_cap"] if "market_cap" in uni else pd.Series(dtype=float)
     company = uni.set_index("ticker")["name"] if "name" in uni else pd.Series(dtype=object)

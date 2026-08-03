@@ -292,3 +292,33 @@ def test_fallback_shares_does_not_use_the_aggregate_share_count():
     src = inspect.getsource(uni.fallback_shares)
     assert "get_info" in src
     assert "fast_info" not in src.split('"""')[2], "fast_info must not be used in the body"
+
+
+# ──────────────────────────────────────── exporter-side filter (live-site hotfix, 2026-08-03)
+def test_the_shipped_explore_bundle_contains_no_non_equities():
+    """Explore is a STOCK explorer. GLD/SLV/IBIT/GBTC were rendering as rows on the live site
+    for months — never basket-eligible, so untradable, but shown as if they were companies.
+
+    This asserts the shipped artifact directly, so it holds regardless of which universe the
+    bundle was exported from.
+    """
+    import json
+    from pathlib import Path
+    p = Path("web/public/bundle/explore.json")
+    if not p.exists():
+        pytest.skip("bundle not built")
+    rows = json.loads(p.read_text())["rows"]
+    names = pd.Series([r["ticker"] for r in rows])
+    known = {"GLD", "SLV", "IBIT", "GBTC", "PHYS", "IAU", "SGOL", "BITB", "BTC", "ETHA",
+             "SPY", "QQQ", "DIA", "MDY"}
+    present = sorted(known & set(names))
+    assert not present, f"non-equities still rendering in Explore: {present}"
+
+
+def test_the_exporter_filters_non_equities_itself():
+    """Belt-and-braces: the exporter must not rely on the universe artifact already being
+    clean, because a bundle can be exported from a universe built before the builder fix."""
+    import inspect
+    import scripts.export_web_bundle as ex
+    src = inspect.getsource(ex.build_explore)
+    assert "is_non_equity" in src, "exporter no longer filters non-equities"
