@@ -75,6 +75,7 @@ MIN_PRICE = 1.0
 MIN_DOLLAR_VOLUME = 1e6       # $1M/day median — tradable enough to model
 DEFAULT_MAX_NAMES = 1200      # liquidity cap; ~the S&P 900 / Russell 1000 field
 RECOVERY_MIN_RATE = 0.5       # below this share of the liquid gap, the recovery is degraded
+SHARES_CACHE = Path("data/cache/fallback_shares.json")
 
 UNIVERSE_PATH = Path("data/universe_midlarge.csv")
 
@@ -189,7 +190,9 @@ def sic_codes(ciks, cache_path: Path = Path("data/cache/sector_sic_cache.json"))
     return pd.Series(out, dtype=object)
 
 
-def fallback_shares(tickers, batch: int = 1) -> pd.DataFrame:
+def fallback_shares(tickers, batch: int = 1, cache_path: Path | None = None,
+                    pause: float = 0.3, max_retries: int = 3, circuit_break: int = 25,
+                    cool_down: float = 5.0, refresh: bool = False) -> pd.DataFrame:
     """{ticker, shares} from the price provider, for names SEC frames cannot supply.
 
     Used ONLY for the share-count gap above. yfinance reports the *listed class's* shares
@@ -197,20 +200,68 @@ def fallback_shares(tickers, batch: int = 1) -> pd.DataFrame:
     basis for a per-ticker universe: this row is GOOGL-the-listing at GOOGL's price. Every
     recovered name is tagged `shares_source="price_provider"` so a later audit can separate
     SEC-sourced market caps from provider-sourced ones.
+
+    `fast_info.shares` would be ~4x cheaper but reports the A+B+C AGGREGATE (GOOGL 12.2B),
+    which paired with the Class-A price would inflate market cap by ~2x. The heavier
+    `get_info` call is the one with the right basis, so the cost is paid deliberately and
+    managed with pacing, backoff and an on-disk cache instead of being optimised away.
+
+    Results are cached per ticker (including misses, as null) so an interrupted or
+    rate-limited run resumes instead of restarting — a 20-minute loop that dies at 90% used
+    to lose everything.
     """
+    import time
     import yfinance as yf
-    rows, failures = [], 0
-    for tk in sorted(set(tickers)):
-        try:
-            so = yf.Ticker(tk).get_info().get("sharesOutstanding")
-        except Exception as e:                           # noqa: BLE001
-            failures += 1
-            logger.debug("fallback shares failed for %s: %s", tk, e)
-            continue
-        so = pd.to_numeric(so, errors="coerce")
-        if so and np.isfinite(so) and so > 0:
-            rows.append({"ticker": tk, "shares": float(so)})
-    n = len(set(tickers))
+
+    cache_path = Path(cache_path or SHARES_CACHE)
+    cache: dict = json.loads(cache_path.read_text()) if cache_path.exists() and not refresh else {}
+    wanted = sorted(set(tickers))
+    todo = [t for t in wanted if t not in cache]
+    if len(todo) < len(wanted):
+        logger.info("fallback shares: %d of %d already cached, fetching %d",
+                    len(wanted) - len(todo), len(wanted), len(todo))
+
+    def _save():
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(cache, sort_keys=True))
+
+    # The bulk price screen runs immediately before this loop and hammers the same host. On
+    # 2026-08-03 an unpaced 853-name burst straight after it got 853/853 refusals; the same
+    # calls paced at 0.3s answered 30/30. Breathe first, then pace, then back off.
+    if todo and cool_down:
+        logger.info("cooling down %.0fs before per-name lookups", cool_down)
+        time.sleep(cool_down)
+
+    consecutive = 0
+    for i, tk in enumerate(todo, 1):
+        so = None
+        for attempt in range(max_retries):
+            try:
+                so = yf.Ticker(tk).get_info().get("sharesOutstanding")
+                break
+            except Exception as e:                       # noqa: BLE001
+                logger.debug("fallback shares failed for %s (attempt %d): %s", tk, attempt + 1, e)
+                time.sleep(pause * (2 ** attempt))       # exponential backoff
+        cache[tk] = float(so) if pd.notna(pd.to_numeric(so, errors="coerce")) else None
+        consecutive = 0 if cache[tk] else consecutive + 1
+        # A provider that has stopped answering will not start again inside this run. Bail out
+        # rather than burn 20 silent minutes to recover nothing.
+        if consecutive >= circuit_break:
+            logger.warning("fallback shares: %d consecutive failures — the provider is refusing. "
+                           "Aborting the loop early with %d/%d fetched; progress is cached, so a "
+                           "later re-run resumes instead of restarting.",
+                           consecutive, i, len(todo))
+            break
+        if i % 50 == 0:
+            _save()
+            logger.info("fallback shares: %d/%d fetched (%d recovered so far)",
+                        i, len(todo), sum(1 for v in cache.values() if v))
+        time.sleep(pause)
+    _save()
+
+    rows = [{"ticker": t, "shares": cache[t]} for t in wanted if cache.get(t)]
+    failures = sum(1 for t in wanted if t in cache and not cache[t])
+    n = len(wanted)
     logger.info("fallback share counts: recovered %d of %d names from the price provider "
                 "(%d lookups failed)", len(rows), n, failures)
     # A provider that rate-limits mid-run answers nothing and raises nothing, so a degraded

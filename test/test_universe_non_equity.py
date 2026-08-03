@@ -121,8 +121,6 @@ def test_exclusion_runs_before_the_liquidity_cap():
     assert src.index("exclude_non_equity") < src.index("liquidity_cap_dropped")
 
 
-@pytest.mark.skipif(not __import__("pathlib").Path("data/universe_midlarge.csv").exists(),
-                    reason="committed universe not built")
 def _universe_was_built_with_the_exclusion() -> bool:
     """True only if the committed universe came out of the fixed builder.
 
@@ -209,3 +207,88 @@ def test_a_healthy_recovery_passes_the_guard(monkeypatch):
     res = uni.build_universe(out=None)
     assert set(res["universe"]["ticker"]) == {"AAA", "GOOGL"}
     assert res["stats"]["share_count_recovered_from_price_provider"] == 1
+
+
+# ────────────────────────────────────── fallback_shares pacing/backoff/cache (2026-08-03 fix)
+def _yf_stub(answers, calls):
+    """Fake yfinance module whose Ticker(tk).get_info() follows `answers`."""
+    class _T:
+        def __init__(self, tk): self.tk = tk
+        def get_info(self):
+            calls.append(self.tk)
+            v = answers[self.tk]
+            if isinstance(v, Exception):
+                raise v
+            return {"sharesOutstanding": v}
+    return type("yf", (), {"Ticker": _T})
+
+
+def _install(monkeypatch, answers, calls):
+    import sys
+    monkeypatch.setitem(sys.modules, "yfinance", _yf_stub(answers, calls))
+    monkeypatch.setattr("time.sleep", lambda *_: None)      # no real waiting in tests
+
+
+def test_fallback_shares_caches_results_so_a_rerun_resumes(monkeypatch, tmp_path):
+    """A 20-minute loop that dies at 90% used to lose everything. Now progress is on disk."""
+    calls = []
+    _install(monkeypatch, {"AAA": 1e9, "BBB": 2e9}, calls)
+    c = tmp_path / "shares.json"
+    r1 = uni.fallback_shares(["AAA", "BBB"], cache_path=c, cool_down=0)
+    assert len(r1) == 2 and c.exists()
+    n_first = len(calls)
+    r2 = uni.fallback_shares(["AAA", "BBB"], cache_path=c, cool_down=0)
+    assert len(r2) == 2
+    assert len(calls) == n_first, "second run refetched instead of using the cache"
+
+
+def test_fallback_shares_caches_misses_too(monkeypatch, tmp_path):
+    """A miss must be remembered, or every re-run pays for the same dead ticker again."""
+    calls = []
+    _install(monkeypatch, {"DEAD": None}, calls)
+    c = tmp_path / "shares.json"
+    uni.fallback_shares(["DEAD"], cache_path=c, cool_down=0, max_retries=1)
+    import json as _j
+    assert _j.loads(c.read_text()) == {"DEAD": None}
+
+
+def test_fallback_shares_retries_with_backoff_before_giving_up(monkeypatch, tmp_path):
+    """Two transient errors then a success must still recover the name."""
+    calls = []
+    state = {"n": 0}
+
+    class _T:
+        def __init__(self, tk): pass
+        def get_info(self):
+            calls.append(1)
+            state["n"] += 1
+            if state["n"] < 3:
+                raise RuntimeError("429 rate limited")
+            return {"sharesOutstanding": 5.8e9}
+    import sys
+    monkeypatch.setitem(sys.modules, "yfinance", type("yf", (), {"Ticker": _T}))
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+    out = uni.fallback_shares(["GOOGL"], cache_path=tmp_path / "s.json", cool_down=0,
+                              max_retries=3)
+    assert len(out) == 1 and out.iloc[0]["shares"] == 5.8e9
+    assert len(calls) == 3, "did not retry"
+
+
+def test_fallback_shares_trips_a_circuit_breaker_instead_of_grinding(monkeypatch, tmp_path):
+    """The real 2026-08-03 failure: 853 straight refusals. Stop early, don't burn 20 minutes."""
+    calls = []
+    tickers = [f"T{i}" for i in range(200)]
+    _install(monkeypatch, {t: RuntimeError("429") for t in tickers}, calls)
+    out = uni.fallback_shares(tickers, cache_path=tmp_path / "s.json", cool_down=0,
+                              max_retries=1, circuit_break=10)
+    assert len(out) == 0
+    assert len(calls) < 50, f"kept going after the breaker should have tripped ({len(calls)} calls)"
+
+
+def test_fallback_shares_does_not_use_the_aggregate_share_count():
+    """`fast_info.shares` is cheaper but reports A+B+C (GOOGL 12.2B) against a Class-A price,
+    which would roughly double the market cap. The source must stay `get_info`."""
+    import inspect
+    src = inspect.getsource(uni.fallback_shares)
+    assert "get_info" in src
+    assert "fast_info" not in src.split('"""')[2], "fast_info must not be used in the body"
