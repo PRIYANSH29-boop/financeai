@@ -40,6 +40,10 @@ sectors:
 	$(PY) -m scripts.map_sectors
 	$(PY) -m scripts.sector_report
 
+## Phase 26 — style census + style x season Rank IC grids (no training; reads the frozen OOS).
+styles:
+	$(PY) scripts/style_season_report.py
+
 ## Phase 21 — regime-segmented backtest: slice the committed history by market weather.
 ## Offline, no refit, no prediction. Writes figures/lab/regime_report.md.
 regimes-backtest:
