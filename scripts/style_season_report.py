@@ -101,7 +101,10 @@ def main() -> int:
     # ── wide universe ────────────────────────────────────────────────────────────────────
     uni = pd.read_csv(WIDE_UNIVERSE)
     # Drop index funds the #24 recovery let in (SPY/QQQ/DIA/MDY) — see `is_non_equity`.
-    etf_mask = is_non_equity(uni["name"])
+    _sic_cache = Path("data/cache/sector_sic_cache.json")
+    _sics = (uni["cik"].astype(str).map(__import__("json").loads(_sic_cache.read_text()))
+             if _sic_cache.exists() else None)
+    etf_mask = is_non_equity(uni["name"], _sics)
     etfs = sorted(uni.loc[etf_mask, "ticker"])
     if etfs:
         logger.warning("excluding %d non-equity issuers from the universe: %s", len(etfs), etfs)

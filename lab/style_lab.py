@@ -83,24 +83,11 @@ def normalize_sector(s: pd.Series) -> pd.Series:
     return s.astype(object).replace(SECTOR_ALIASES)
 
 
-# The #24 share-gap recovery reopened the universe to non-equities: an ETF trust has no
-# `EntityCommonStockSharesOutstanding` in the SEC frames endpoint, so it fell into the gap, and
-# the price provider answers `sharesOutstanding` for it happily. SPY/QQQ/DIA/MDY then cleared
-# the $2B and liquidity screens trivially — SPY entered as the single largest "name" in the
-# 1,200. They are index funds, not stocks: they carry no sector, and a market proxy sitting
-# inside a cross-sectional momentum ranking is a contaminant, not a name. Excluded here by
-# SEC-registered entity name, which is the field that actually identifies them.
-NON_EQUITY_NAME_PATTERNS = ("ETF TRUST", "ETF, SERIES", "TRUST, SERIES", "INDEX TRUST",
-                            "INDEX FUND", " ETF")
-
-
-def is_non_equity(entity_names: pd.Series) -> pd.Series:
-    """True where the SEC-registered entity name identifies a fund/trust rather than a company."""
-    up = entity_names.astype(str).str.upper()
-    hit = pd.Series(False, index=entity_names.index)
-    for pat in NON_EQUITY_NAME_PATTERNS:
-        hit |= up.str.contains(pat, regex=False, na=False)
-    return hit
+# A market proxy sitting inside a cross-sectional momentum ranking is a contaminant, not a name.
+# The canonical rule lives in `universe.py` (SEC SIC + a word-bounded name test) so the universe
+# builder and this analysis layer can never drift apart — an earlier name-only version here
+# silently kept every gold, silver and bitcoin trust.
+from universe import is_non_equity, NON_EQUITY_SIC, NON_EQUITY_NAME_RE  # noqa: E402,F401
 
 STYLES = ["growth", "value", "dividend", "blue_chip", "cyclical", "defensive", "speculative"]
 

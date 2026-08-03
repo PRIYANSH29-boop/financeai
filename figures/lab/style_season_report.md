@@ -11,12 +11,12 @@
 
 - **GROWTH** is *EPS* growth, not revenue growth — only the earnings half of the instruction's "revenue/earnings growth" exists offline.
 - **GROWTH**, **VALUE** and the *no-earnings* leg of **SPECULATIVE** are evaluable only for names with a SEC ledger. Names without one are **not** defaulted into or out of those styles — that would invent a census. They are reported as not evaluable.
-- Wide universe: **486 of 1186** names have usable fundamentals. S&P: **490 of 502**.
+- Wide universe: **486 of 1169** names have usable fundamentals. S&P: **490 of 502**.
 
 
 ## Part A finding — index funds in the stock universe
 
-The #24 share-gap recovery reopened the universe to **non-equities**: an ETF trust has no share count in the SEC `frames` endpoint, so it landed in the 2,303-name gap, and the price provider answered `sharesOutstanding` for it. **8 index funds (DIA, ETHA, GBTC, IBIT, MDY, QQQ, SGOL, SPY) cleared the $2B and liquidity screens** — SPY entered as the single largest name in the 1,200. They are excluded from everything below by SEC entity name (`lab.style_lab.is_non_equity`). **`universe.py` itself is NOT fixed** — the committed universe CSV still contains them until a rebuild with a permanent exclusion rule, which needs its own instruction.
+The #24 share-gap recovery reopened the universe to **non-equities**: an ETF trust has no share count in the SEC `frames` endpoint, so it landed in the 2,303-name gap, and the price provider answered `sharesOutstanding` for it. **25 index funds (AGQ, BOIL, DIA, ETHA, FBTC, GBTC, GLD, GLDM, IAU, IAUM, IBIT, MDY, PHYS, PSLV, QQQ, SCO, SGOL, SLV, SPY, SVXY, UCO, UGL, UVIX, UVXY, ZSL) cleared the $2B and liquidity screens** — SPY entered as the single largest name in the 1,200. They are excluded from everything below by SEC entity name (`lab.style_lab.is_non_equity`). **`universe.py` itself is NOT fixed** — the committed universe CSV still contains them until a rebuild with a permanent exclusion rule, which needs its own instruction.
 
 
 ## Part B — the style census
@@ -27,15 +27,15 @@ Rules are committed in `lab/style_lab.py` as cross-sectional percentile threshol
 
 | style | n_names | pct_of_universe |
 |---|---|---|
-| growth | 143.0 | 12.1 |
-| value | 161.0 | 13.6 |
-| dividend | 345.0 | 29.1 |
-| blue_chip | 132.0 | 11.1 |
-| cyclical | 365.0 | 30.8 |
-| defensive | 150.0 | 12.6 |
-| speculative | 222.0 | 18.7 |
+| growth | 143.0 | 12.2 |
+| value | 161.0 | 13.8 |
+| dividend | 339.0 | 29.0 |
+| blue_chip | 129.0 | 11.0 |
+| cyclical | 368.0 | 31.5 |
+| defensive | 150.0 | 12.8 |
+| speculative | 217.0 | 18.6 |
 
-*182 of 1186 names carry no style at all (they clear no rule); 514 carry the maximum 2.*
+*172 of 1169 names carry no style at all (they clear no rule); 510 carry the maximum 2.*
 
 
 ### S&P 500
@@ -57,13 +57,13 @@ Rules are committed in `lab/style_lab.py` as cross-sectional percentile threshol
 
 |  | growth | value | dividend | blue_chip | cyclical | defensive | speculative |
 |---|---|---|---|---|---|---|---|
-| growth | 143 | 43 | 21 | 32 | 14 | 9 | 0 |
+| growth | 143 | 43 | 20 | 32 | 15 | 9 | 0 |
 | value | 43 | 161 | 63 | 21 | 18 | 4 | 0 |
-| dividend | 21 | 63 | 345 | 47 | 70 | 35 | 20 |
-| blue_chip | 32 | 21 | 47 | 132 | 13 | 5 | 0 |
-| cyclical | 14 | 18 | 70 | 13 | 365 | 0 | 77 |
+| dividend | 20 | 63 | 339 | 44 | 68 | 35 | 20 |
+| blue_chip | 32 | 21 | 44 | 129 | 14 | 5 | 0 |
+| cyclical | 15 | 18 | 68 | 14 | 368 | 0 | 77 |
 | defensive | 9 | 4 | 35 | 5 | 0 | 150 | 22 |
-| speculative | 0 | 0 | 20 | 0 | 77 | 22 | 222 |
+| speculative | 0 | 0 | 20 | 0 | 77 | 22 | 217 |
 
 
 ## Part C — the grids (every cell, with n)
@@ -97,36 +97,36 @@ The mid-cap question lives here: if momentum is stronger in less-watched names, 
 | value | 2026 | 161 | 7 | +0.0362 | +0.99 | noise |
 | value | earnings months | 161 | 24 | +0.0108 | +0.23 | noise |
 | value | non-earnings months | 161 | 48 | -0.0074 | -0.24 | noise |
-| dividend | full window | 345 | 72 | -0.0123 | -0.52 | noise |
-| dividend | 2020 | 331 | 5 | -0.1406 | -0.95 | noise |
-| dividend | 2021 | 335 | 12 | -0.0597 | -1.11 | noise |
-| dividend | 2022 | 337 | 12 | +0.0005 | +0.01 | noise |
-| dividend | 2023 | 341 | 12 | +0.0353 | +0.62 | noise |
-| dividend | 2024 | 343 | 12 | +0.0538 | +1.31 | noise |
-| dividend | 2025 | 344 | 12 | -0.0294 | -0.59 | noise |
-| dividend | 2026 | 345 | 7 | -0.0269 | -0.76 | noise |
-| dividend | earnings months | 345 | 24 | +0.0041 | +0.09 | noise |
-| dividend | non-earnings months | 345 | 48 | -0.0205 | -0.74 | noise |
-| blue_chip | full window | 132 | 72 | -0.0238 | -0.97 | noise |
-| blue_chip | 2020 | 132 | 5 | -0.1317 | -1.15 | noise |
-| blue_chip | 2021 | 132 | 12 | -0.0658 | -1.22 | noise |
-| blue_chip | 2022 | 132 | 12 | -0.0454 | -0.58 | noise |
-| blue_chip | 2023 | 132 | 12 | +0.0491 | +0.81 | noise |
-| blue_chip | 2024 | 132 | 12 | +0.0334 | +0.55 | noise |
-| blue_chip | 2025 | 132 | 12 | -0.0569 | -1.08 | noise |
-| blue_chip | 2026 | 132 | 7 | -0.0041 | -0.07 | noise |
-| blue_chip | earnings months | 132 | 24 | +0.0066 | +0.15 | noise |
-| blue_chip | non-earnings months | 132 | 48 | -0.0390 | -1.31 | noise |
-| cyclical | full window | 355 | 72 | -0.0073 | -0.34 | noise |
-| cyclical | 2020 | 313 | 5 | -0.0784 | -0.67 | noise |
-| cyclical | 2021 | 325 | 12 | -0.0599 | -1.50 | noise |
-| cyclical | 2022 | 339 | 12 | -0.0051 | -0.09 | noise |
-| cyclical | 2023 | 340 | 12 | +0.0447 | +1.00 | noise |
-| cyclical | 2024 | 347 | 12 | +0.0453 | +1.04 | noise |
-| cyclical | 2025 | 352 | 12 | +0.0099 | +0.17 | noise |
-| cyclical | 2026 | 355 | 7 | -0.0786 | -1.02 | noise |
-| cyclical | earnings months | 355 | 24 | +0.0079 | +0.21 | noise |
-| cyclical | non-earnings months | 355 | 48 | -0.0149 | -0.57 | noise |
+| dividend | full window | 339 | 72 | -0.0120 | -0.50 | noise |
+| dividend | 2020 | 325 | 5 | -0.1451 | -0.97 | noise |
+| dividend | 2021 | 329 | 12 | -0.0577 | -1.05 | noise |
+| dividend | 2022 | 331 | 12 | -0.0015 | -0.02 | noise |
+| dividend | 2023 | 335 | 12 | +0.0338 | +0.59 | noise |
+| dividend | 2024 | 337 | 12 | +0.0558 | +1.41 | noise |
+| dividend | 2025 | 338 | 12 | -0.0301 | -0.59 | noise |
+| dividend | 2026 | 339 | 7 | -0.0206 | -0.58 | noise |
+| dividend | earnings months | 339 | 24 | +0.0043 | +0.09 | noise |
+| dividend | non-earnings months | 339 | 48 | -0.0202 | -0.72 | noise |
+| blue_chip | full window | 129 | 72 | -0.0250 | -1.00 | noise |
+| blue_chip | 2020 | 129 | 5 | -0.1338 | -1.15 | noise |
+| blue_chip | 2021 | 129 | 12 | -0.0663 | -1.17 | noise |
+| blue_chip | 2022 | 129 | 12 | -0.0472 | -0.60 | noise |
+| blue_chip | 2023 | 129 | 12 | +0.0424 | +0.70 | noise |
+| blue_chip | 2024 | 129 | 12 | +0.0373 | +0.62 | noise |
+| blue_chip | 2025 | 129 | 12 | -0.0639 | -1.20 | noise |
+| blue_chip | 2026 | 129 | 7 | +0.0056 | +0.10 | noise |
+| blue_chip | earnings months | 129 | 24 | +0.0075 | +0.17 | noise |
+| blue_chip | non-earnings months | 129 | 48 | -0.0413 | -1.36 | noise |
+| cyclical | full window | 358 | 72 | -0.0076 | -0.36 | noise |
+| cyclical | 2020 | 316 | 5 | -0.0776 | -0.66 | noise |
+| cyclical | 2021 | 328 | 12 | -0.0609 | -1.53 | noise |
+| cyclical | 2022 | 342 | 12 | -0.0060 | -0.10 | noise |
+| cyclical | 2023 | 343 | 12 | +0.0459 | +1.04 | noise |
+| cyclical | 2024 | 350 | 12 | +0.0441 | +1.00 | noise |
+| cyclical | 2025 | 355 | 12 | +0.0101 | +0.17 | noise |
+| cyclical | 2026 | 358 | 7 | -0.0794 | -1.02 | noise |
+| cyclical | earnings months | 358 | 24 | +0.0084 | +0.22 | noise |
+| cyclical | non-earnings months | 358 | 48 | -0.0156 | -0.60 | noise |
 | defensive | full window | 148 | 72 | -0.0151 | -0.74 | noise |
 | defensive | 2020 | 138 | 5 | +0.0054 | +0.10 | noise |
 | defensive | 2021 | 141 | 12 | -0.0360 | -0.66 | noise |
@@ -137,26 +137,26 @@ The mid-cap question lives here: if momentum is stronger in less-watched names, 
 | defensive | 2026 | 148 | 7 | -0.0393 | -0.56 | noise |
 | defensive | earnings months | 148 | 24 | +0.0149 | +0.49 | noise |
 | defensive | non-earnings months | 148 | 48 | -0.0300 | -1.13 | noise |
-| speculative | full window | 212 | 72 | +0.0054 | +0.29 | noise |
-| speculative | 2020 | 147 | 5 | +0.0053 | +0.09 | noise |
-| speculative | 2021 | 165 | 12 | +0.0036 | +0.11 | noise |
-| speculative | 2022 | 194 | 12 | +0.0646 | +1.09 | noise |
-| speculative | 2023 | 198 | 12 | +0.0381 | +0.97 | noise |
-| speculative | 2024 | 202 | 12 | +0.0000 | +0.00 | noise |
-| speculative | 2025 | 205 | 12 | -0.0172 | -0.38 | noise |
-| speculative | 2026 | 212 | 7 | -0.1011 | -1.22 | noise |
-| speculative | earnings months | 212 | 24 | +0.0313 | +1.17 | noise |
-| speculative | non-earnings months | 212 | 48 | -0.0075 | -0.31 | noise |
-| ALL (control) | full window | 1165 | 72 | -0.0042 | -0.20 | noise |
-| ALL (control) | 2020 | 1023 | 5 | -0.0300 | -0.31 | noise |
-| ALL (control) | 2021 | 1059 | 12 | -0.0514 | -1.31 | noise |
-| ALL (control) | 2022 | 1110 | 12 | +0.0257 | +0.40 | noise |
-| ALL (control) | 2023 | 1122 | 12 | +0.0309 | +0.80 | noise |
-| ALL (control) | 2024 | 1137 | 12 | +0.0392 | +0.93 | noise |
-| ALL (control) | 2025 | 1152 | 12 | -0.0154 | -0.31 | noise |
-| ALL (control) | 2026 | 1165 | 7 | -0.0715 | -0.77 | noise |
-| ALL (control) | earnings months | 1165 | 24 | +0.0101 | +0.32 | noise |
-| ALL (control) | non-earnings months | 1165 | 48 | -0.0114 | -0.42 | noise |
+| speculative | full window | 207 | 72 | -0.0046 | -0.24 | noise |
+| speculative | 2020 | 143 | 5 | -0.0076 | -0.12 | noise |
+| speculative | 2021 | 161 | 12 | -0.0073 | -0.21 | noise |
+| speculative | 2022 | 190 | 12 | +0.0643 | +1.08 | noise |
+| speculative | 2023 | 193 | 12 | +0.0280 | +0.66 | noise |
+| speculative | 2024 | 197 | 12 | -0.0117 | -0.32 | noise |
+| speculative | 2025 | 200 | 12 | -0.0306 | -0.65 | noise |
+| speculative | 2026 | 207 | 7 | -0.1149 | -1.41 | noise |
+| speculative | earnings months | 207 | 24 | +0.0161 | +0.57 | noise |
+| speculative | non-earnings months | 207 | 48 | -0.0149 | -0.60 | noise |
+| ALL (control) | full window | 1148 | 72 | -0.0062 | -0.30 | noise |
+| ALL (control) | 2020 | 1009 | 5 | -0.0300 | -0.30 | noise |
+| ALL (control) | 2021 | 1045 | 12 | -0.0556 | -1.42 | noise |
+| ALL (control) | 2022 | 1095 | 12 | +0.0258 | +0.40 | noise |
+| ALL (control) | 2023 | 1106 | 12 | +0.0296 | +0.76 | noise |
+| ALL (control) | 2024 | 1121 | 12 | +0.0379 | +0.93 | noise |
+| ALL (control) | 2025 | 1135 | 12 | -0.0219 | -0.44 | noise |
+| ALL (control) | 2026 | 1148 | 7 | -0.0695 | -0.73 | noise |
+| ALL (control) | earnings months | 1148 | 24 | +0.0078 | +0.25 | noise |
+| ALL (control) | non-earnings months | 1148 | 48 | -0.0132 | -0.49 | noise |
 
 ### C2 · Simple 12-1 momentum — S&P 500 OOS window
 

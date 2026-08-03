@@ -142,6 +142,52 @@ def candidates(client: SECClient | None = None) -> tuple[pd.DataFrame, pd.DataFr
     return with_shares.reset_index(drop=True), gap.reset_index(drop=True)
 
 
+# ------------------------------------------------------------------ non-equity exclusion (#26)
+# The #24 share-gap recovery reopened this universe to things that are not companies. An ETF or
+# commodity trust has no `EntityCommonStockSharesOutstanding` in the frames endpoint, so it fell
+# into the gap; the price provider then answered `sharesOutstanding` for it happily, and it
+# cleared the $2B and liquidity screens trivially. SPY entered as the single largest name in the
+# 1,200, alongside gold, silver, bitcoin and leveraged-volatility trusts.
+#
+# Two signals, because neither alone is sufficient:
+#   * SIC — the SEC's own structural classification. 6221 is where commodity and crypto trusts
+#     live; 6722/6726 are the fund codes. This is the principled test, and it is precise: REITs
+#     are 6798 and banks 6021/6022, so property trusts and "…Trust Corp" banks are untouched.
+#   * NAME — SPY/QQQ/DIA/MDY are unit investment trusts that carry NO SIC at all, so structure
+#     cannot see them. `\bETF\b` is word-bounded on purpose: a bare "ETF" substring matches
+#     N-ETF-LIX.
+NON_EQUITY_SIC = {"6221", "6722", "6726"}
+NON_EQUITY_NAME_RE = r"\bETF\b|TRUST,\s*SERIES|TRUST II\b"
+
+
+def is_non_equity(names: pd.Series, sics: pd.Series | None = None) -> pd.Series:
+    """True where a registrant is a fund/trust vehicle rather than an operating company."""
+    hit = names.astype(str).str.contains(NON_EQUITY_NAME_RE, case=False, regex=True, na=False)
+    if sics is not None:
+        hit = hit | sics.astype(str).isin(NON_EQUITY_SIC)
+    return hit
+
+
+def sic_codes(ciks, cache_path: Path = Path("data/cache/sector_sic_cache.json")) -> pd.Series:
+    """{cik -> SIC} from the SEC submissions endpoint, sharing `map_sectors`' on-disk cache.
+
+    Called only on the names that already survived the value filters, so this is a few hundred
+    cached lookups, not a sweep of every registrant.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_map_sectors", Path(__file__).with_name("scripts") / "map_sectors.py")
+    ms = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ms)
+    cache = ms._load(cache_path)
+    before = len(cache)
+    out = {int(c): ms.fetch_sic(int(c), cache) for c in pd.unique(pd.Series(list(ciks)))}
+    if len(cache) != before:
+        ms._save(cache_path, cache)
+    logger.info("SIC codes: %d resolved (%d newly fetched)", len(out), len(cache) - before)
+    return pd.Series(out, dtype=object)
+
+
 def fallback_shares(tickers, batch: int = 1) -> pd.DataFrame:
     """{ticker, shares} from the price provider, for names SEC frames cannot supply.
 
@@ -203,7 +249,8 @@ def market_screen(tickers, lookback_days: int = 90, batch: int = 200) -> pd.Data
 def build_universe(min_market_cap: float = MIN_MARKET_CAP, max_names: int = DEFAULT_MAX_NAMES,
                    min_price: float = MIN_PRICE, min_dollar_volume: float = MIN_DOLLAR_VOLUME,
                    client: SECClient | None = None, out: Path | None = UNIVERSE_PATH,
-                   recover_share_gap: bool = True) -> dict:
+                   recover_share_gap: bool = True, exclude_non_equity: bool = True,
+                   use_sic: bool = True) -> dict:
     """Build the mid+large-cap universe and return {universe, stats} with filter counts."""
     cand, gap = candidates(client)
 
@@ -251,6 +298,19 @@ def build_universe(min_market_cap: float = MIN_MARKET_CAP, max_names: int = DEFA
     df = df[mask].copy()
 
     df = df.sort_values("median_dollar_volume", ascending=False)
+
+    # Drop funds/trusts BEFORE the liquidity cap, so the freed slots refill with real companies
+    # rather than simply shrinking the universe.
+    if exclude_non_equity and len(df):
+        sics = sic_codes(df["cik"]) if use_sic else None
+        non_eq = is_non_equity(df["name"], df["cik"].map(sics) if sics is not None else None)
+        stats["excluded_non_equity"] = int(non_eq.sum())
+        stats["excluded_non_equity_tickers"] = sorted(df.loc[non_eq, "ticker"].tolist())
+        if int(non_eq.sum()):
+            logger.info("excluded %d non-equity issuers (funds/commodity/crypto trusts): %s",
+                        int(non_eq.sum()), stats["excluded_non_equity_tickers"])
+        df = df[~non_eq]
+
     if max_names and len(df) > max_names:
         stats["liquidity_cap_dropped"] = int(len(df) - max_names)
         df = df.head(max_names)
