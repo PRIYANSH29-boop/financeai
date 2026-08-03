@@ -123,14 +123,89 @@ def test_exclusion_runs_before_the_liquidity_cap():
 
 @pytest.mark.skipif(not __import__("pathlib").Path("data/universe_midlarge.csv").exists(),
                     reason="committed universe not built")
-def test_against_the_shipped_universe():
-    """End-to-end on the real file: the 25 known non-equities go, every REIT and bank stays."""
+def _universe_was_built_with_the_exclusion() -> bool:
+    """True only if the committed universe came out of the fixed builder.
+
+    `excluded_non_equity` is written by `build_universe` whenever the exclusion runs, so its
+    absence means the artifact predates the fix. As of 2026-08-03 it does: the rebuild is
+    blocked because the price provider rate-limits the share-count recovery, and the guard
+    (correctly) refuses to write a universe missing its multi-class names.
+    """
+    from pathlib import Path
+    import json
+    p = Path("data/universe_stats.json")
+    return p.exists() and "excluded_non_equity" in json.loads(p.read_text())
+
+
+@pytest.mark.skipif(not _universe_was_built_with_the_exclusion(),
+                    reason="committed universe predates the non-equity exclusion — it still "
+                           "contains ~21 commodity/crypto trusts. Rebuild with `make universe` "
+                           "once the price provider stops rate-limiting.")
+def test_the_built_universe_contains_no_non_equities():
+    """End-to-end on the real artifact: after a rebuild the universe must hold ZERO funds/trusts.
+
+    This asserts the post-fix invariant, not the old contaminated state — a universe built by
+    the current code that still contained SPY would mean the exclusion never ran.
+    """
     import json
     from pathlib import Path
     u = pd.read_csv("data/universe_midlarge.csv")
     cache = Path("data/cache/sector_sic_cache.json")
     sics = u["cik"].astype(str).map(json.loads(cache.read_text())) if cache.exists() else None
-    hit = uni.is_non_equity(u["name"], sics)
-    excluded = set(u.loc[hit, "ticker"])
-    assert {"SPY", "QQQ", "DIA", "MDY", "GLD", "SLV", "IBIT", "GBTC"} <= excluded
-    assert not ({"CPT", "DLR", "ESS", "FRT", "HR", "NSA", "NTRS", "WTFC", "NFLX"} & excluded)
+    survivors = sorted(u.loc[uni.is_non_equity(u["name"], sics), "ticker"])
+    assert not survivors, f"non-equities still in the universe: {survivors}"
+    assert not ({"SPY", "QQQ", "DIA", "MDY", "GLD", "SLV", "IBIT", "GBTC"} & set(u["ticker"]))
+
+
+@pytest.mark.skipif(not __import__("pathlib").Path("data/universe_midlarge.csv").exists(),
+                    reason="committed universe not built")
+def test_real_companies_that_look_like_trusts_survived_the_build():
+    """The over-reach direction, on the real artifact: REITs and banks must still be present."""
+    u = set(pd.read_csv("data/universe_midlarge.csv")["ticker"])
+    for tk in ["CPT", "DLR", "ESS", "FRT", "NTRS", "NFLX"]:
+        assert tk in u, f"{tk} was wrongly excluded from the universe"
+
+
+# ─────────────────────────────────────────── degraded-recovery guard (2026-08-03 regression)
+def test_build_universe_refuses_a_degraded_recovery(monkeypatch):
+    """The real failure: yfinance rate-limited mid-run, `fallback_shares` swallowed all 852
+    exceptions at debug level, and the build wrote a universe silently missing every
+    multi-class mega-cap — S&P coverage back to 451/503 with no error anywhere."""
+    cand = pd.DataFrame({"ticker": ["AAA"], "cik": [1], "name": ["AAA CORP"],
+                         "exchange": ["NYSE"], "shares": [1e9], "as_of": ["2026-01-01"],
+                         "shares_source": ["sec_xbrl_frames"]})
+    gap = pd.DataFrame({"ticker": ["GOOGL"], "cik": [2], "name": ["Alphabet Inc."],
+                        "exchange": ["Nasdaq"]})
+    scr = pd.DataFrame({"ticker": ["AAA", "GOOGL"], "last_close": [100.0, 200.0],
+                        "median_dollar_volume": [1e9, 1e9]})
+    monkeypatch.setattr(uni, "candidates", lambda client=None: (cand, gap))
+    monkeypatch.setattr(uni, "market_screen", lambda *a, **k: scr)
+    monkeypatch.setattr(uni, "fallback_shares",
+                        lambda tickers, batch=1: pd.DataFrame(columns=["ticker", "shares"]))
+
+    with pytest.raises(RuntimeError, match="recovery degraded"):
+        uni.build_universe(out=None)
+
+
+def test_the_guard_can_be_overridden_deliberately():
+    """An explicit opt-out exists, so the guard never blocks a knowing operator."""
+    import inspect
+    assert "fail_on_degraded_recovery" in inspect.signature(uni.build_universe).parameters
+
+
+def test_a_healthy_recovery_passes_the_guard(monkeypatch):
+    cand = pd.DataFrame({"ticker": ["AAA"], "cik": [1], "name": ["AAA CORP"],
+                         "exchange": ["NYSE"], "shares": [1e9], "as_of": ["2026-01-01"],
+                         "shares_source": ["sec_xbrl_frames"]})
+    gap = pd.DataFrame({"ticker": ["GOOGL"], "cik": [2], "name": ["Alphabet Inc."],
+                        "exchange": ["Nasdaq"]})
+    scr = pd.DataFrame({"ticker": ["AAA", "GOOGL"], "last_close": [100.0, 200.0],
+                        "median_dollar_volume": [1e9, 1e9]})
+    monkeypatch.setattr(uni, "candidates", lambda client=None: (cand, gap))
+    monkeypatch.setattr(uni, "market_screen", lambda *a, **k: scr)
+    monkeypatch.setattr(uni, "fallback_shares", lambda tickers, batch=1: pd.DataFrame(
+        {"ticker": ["GOOGL"], "shares": [5.8e9]}))
+    monkeypatch.setattr(uni, "sic_codes", lambda ciks, **k: pd.Series(dtype=object))
+    res = uni.build_universe(out=None)
+    assert set(res["universe"]["ticker"]) == {"AAA", "GOOGL"}
+    assert res["stats"]["share_count_recovered_from_price_provider"] == 1

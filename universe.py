@@ -74,6 +74,7 @@ MIN_MARKET_CAP = 2e9          # the #16 spec: mid + large cap
 MIN_PRICE = 1.0
 MIN_DOLLAR_VOLUME = 1e6       # $1M/day median — tradable enough to model
 DEFAULT_MAX_NAMES = 1200      # liquidity cap; ~the S&P 900 / Russell 1000 field
+RECOVERY_MIN_RATE = 0.5       # below this share of the liquid gap, the recovery is degraded
 
 UNIVERSE_PATH = Path("data/universe_midlarge.csv")
 
@@ -198,18 +199,29 @@ def fallback_shares(tickers, batch: int = 1) -> pd.DataFrame:
     SEC-sourced market caps from provider-sourced ones.
     """
     import yfinance as yf
-    rows = []
+    rows, failures = [], 0
     for tk in sorted(set(tickers)):
         try:
             so = yf.Ticker(tk).get_info().get("sharesOutstanding")
         except Exception as e:                           # noqa: BLE001
+            failures += 1
             logger.debug("fallback shares failed for %s: %s", tk, e)
             continue
         so = pd.to_numeric(so, errors="coerce")
         if so and np.isfinite(so) and so > 0:
             rows.append({"ticker": tk, "shares": float(so)})
-    logger.info("fallback share counts: recovered %d of %d names from the price provider",
-                len(rows), len(set(tickers)))
+    n = len(set(tickers))
+    logger.info("fallback share counts: recovered %d of %d names from the price provider "
+                "(%d lookups failed)", len(rows), n, failures)
+    # A provider that rate-limits mid-run answers nothing and raises nothing, so a degraded
+    # recovery used to look exactly like a healthy one: an INFO line, then a universe quietly
+    # missing every multi-class mega-cap. This happened for real on 2026-08-03 — 0 of 852
+    # recovered, S&P coverage silently back to 451/503. Say so loudly.
+    if n and len(rows) < RECOVERY_MIN_RATE * n:
+        logger.warning("share-count recovery DEGRADED: only %d of %d names (%.0f%%) came back — "
+                       "the price provider is probably rate-limiting. The universe built from "
+                       "this run will be missing multi-class names.", len(rows), n,
+                       100 * len(rows) / n)
     return pd.DataFrame(rows, columns=["ticker", "shares"])
 
 
@@ -250,7 +262,7 @@ def build_universe(min_market_cap: float = MIN_MARKET_CAP, max_names: int = DEFA
                    min_price: float = MIN_PRICE, min_dollar_volume: float = MIN_DOLLAR_VOLUME,
                    client: SECClient | None = None, out: Path | None = UNIVERSE_PATH,
                    recover_share_gap: bool = True, exclude_non_equity: bool = True,
-                   use_sic: bool = True) -> dict:
+                   use_sic: bool = True, fail_on_degraded_recovery: bool = True) -> dict:
     """Build the mid+large-cap universe and return {universe, stats} with filter counts."""
     cand, gap = candidates(client)
 
@@ -269,6 +281,16 @@ def build_universe(min_market_cap: float = MIN_MARKET_CAP, max_names: int = DEFA
         liquid = gap_scr[(gap_scr["last_close"] >= min_price)
                          & (gap_scr["median_dollar_volume"] >= min_dollar_volume)]
         recovered = fallback_shares(liquid["ticker"].tolist())
+        # Refuse to write a universe the recovery silently gutted. Overwriting a good universe
+        # with a degraded one is worse than not building at all — the artifact looks normal and
+        # every downstream phase inherits the hole.
+        if fail_on_degraded_recovery and len(liquid) and \
+                len(recovered) < RECOVERY_MIN_RATE * len(liquid):
+            raise RuntimeError(
+                f"share-count recovery degraded: {len(recovered)} of {len(liquid)} liquid gap "
+                f"names recovered (<{RECOVERY_MIN_RATE:.0%}). The price provider is likely "
+                f"rate-limiting. Refusing to build a universe missing its multi-class names — "
+                f"retry later, or pass fail_on_degraded_recovery=False to build anyway.")
         if len(recovered):
             add = gap.merge(recovered, on="ticker", how="inner")
             add["as_of"] = pd.NaT
