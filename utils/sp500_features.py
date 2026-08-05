@@ -8,7 +8,7 @@ This is Phase 2 only — NO labels here (that's Phase 3).
 
 Pipeline:
   A. Sanity gate          — abort loudly on bad data (prices, nulls, duplicates).
-  B. Min-history filter    — point-in-time eligibility: >=252 trading days on/before t.
+  B. Min-history filter    — point-in-time eligibility: >=253 trading days on/before t.
   C. Raw features          — momentum / reversal / vol / liquidity / size, per stock.
   D. Cross-sectional rank  — within each date, percentile-rank across eligible stocks.
 

@@ -109,13 +109,116 @@ def _load_sector_map(tickers_path) -> pd.Series:
 
 
 # --------------------------------------------------------------- weight caps
+class CapsInfeasibleError(ValueError):
+    """The requested book cannot satisfy the caps, so no weights are returned.
+
+    #25 findings B-1/B-2/B-3: `_apply_caps` used to alternate for 200 passes and then
+    `return w / w.sum()` unconditionally. When the pool was too small to absorb the deficit
+    it returned a vector that VIOLATED the caps it exists to enforce — one name at 100%
+    against an 8% cap — with no exception and no flag, and an all-zero book returned NaN
+    weights. The caps are this product's central safety claim ("humility encoded as rules"),
+    and a safety rule that fails open is worse than none: the shipped bundle was protected
+    only because the exporter re-checked, so any other caller got the violation silently.
+
+    Refusing is the honest answer. A pool that cannot be diversified has no diversified pie.
+    """
+
+
+def _caps_violations(w: pd.Series, sectors: pd.Series, name_cap: float, sector_cap: float,
+                     tol: float = 1e-9) -> list[str]:
+    """Cap breaches in `w`, checked exactly the way `_apply_caps` enforces them.
+
+    Deliberately reuses `w.groupby(sectors)` rather than filling unmapped names into a '?'
+    bucket: the verifier must test what the enforcer enforces, or it reports failures the
+    loop was never trying to prevent. (Unmapped names escaping the sector cap is finding B-5,
+    which is a separate instruction.)
+    """
+    bad = []
+    if not np.isfinite(w.to_numpy(dtype="float64")).all():
+        bad.append("non-finite weights")
+        return bad                                         # everything below would be noise
+    over_name = w[w > name_cap + tol]
+    if len(over_name):
+        worst = over_name.sort_values(ascending=False)
+        bad.append(f"per-name cap {name_cap:.0%} breached by "
+                   + ", ".join(f"{tk} {v:.1%}" for tk, v in worst.head(3).items()))
+    sec_tot = w.groupby(sectors).sum()
+    over_sec = sec_tot[sec_tot > sector_cap + tol]
+    if len(over_sec):
+        bad.append(f"per-sector cap {sector_cap:.0%} breached by "
+                   + ", ".join(f"{s} {v:.1%}" for s, v in over_sec.items()))
+    return bad
+
+
+def _cap_names(w: pd.Series, cap: float) -> pd.Series:
+    """Per-name cap with proportional redistribution, PRESERVING the incoming sum.
+
+    `portfolio.engine._cap_weights` does the same thing but opens with `w = w / w.sum()`.
+    That renormalise is correct in the vol engine (which always hands it a full book) and
+    fatal here: the sector step deliberately leaves the book under-invested, so renormalising
+    at the top of the next pass scaled the just-capped sector straight back over its cap. The
+    two steps then traded weight for all 200 passes and the loop returned the oscillation.
+
+    `portfolio/engine.py` is the shipped, frozen vol engine and is not ours to mutate (#15),
+    so the sum-preserving variant lives here. With a full book in, this is `_cap_weights` out.
+    """
+    total = float(w.sum())
+    if total <= 0:
+        return w
+    for _ in range(100):
+        over = w > cap + 1e-12
+        if not over.any():
+            break
+        excess = float((w[over] - cap).sum())
+        w[over] = cap
+        under = ~over
+        if not under.any() or float(w[under].sum()) <= 0:
+            break
+        w[under] += excess * w[under] / float(w[under].sum())
+    return w
+
+
 def _apply_caps(w: pd.Series, sectors: pd.Series,
                 name_cap=NAME_CAP, sector_cap=SECTOR_CAP) -> pd.Series:
     """Project weights onto {sum=1, per-name ≤ name_cap, per-sector ≤ sector_cap} by
-    alternating cap-and-redistribute. Converges in a handful of passes for sane caps."""
-    w = w / w.sum()
+    alternating cap-and-redistribute. Converges in a handful of passes for sane caps.
+
+    Raises `CapsInfeasibleError` rather than returning weights that breach the caps (#25
+    B-1/B-2/B-3). The commonest cause is a pool too small to hold the caps at all: with an
+    8% name cap it takes ≥ 13 names to reach 100% invested, so a 3-name pool is arithmetically
+    infeasible and there is no correct vector to return.
+    """
+    if len(w) == 0:
+        raise CapsInfeasibleError("no names to weight: the candidate pool is empty")
+    total = float(w.sum())
+    if not np.isfinite(total) or total <= 0:
+        # B-3: `w / w.sum()` on an all-zero book yields NaN weights and no exception.
+        raise CapsInfeasibleError(
+            f"weights sum to {total!r} — an all-zero or non-finite book cannot be normalised. "
+            f"This is a bug in the caller's scoring/sizing, not a portfolio.")
+    if len(w) * name_cap < 1.0 - 1e-9:
+        raise CapsInfeasibleError(
+            f"{len(w)} name{'' if len(w) == 1 else 's'} cannot fill a book under a "
+            f"{name_cap:.0%} per-name cap (max investable {len(w) * name_cap:.0%}). "
+            f"Widen the pool or the cap.")
+    # Joint capacity: each sector can hold at most min(sector_cap, n_names × name_cap), so a
+    # pool concentrated in a few sectors can be arithmetically unable to be fully invested
+    # however the weights are arranged. Checked up front because the alternative is a
+    # confusing post-normalisation breach: the loop stops under-invested and the final
+    # `w / w.sum()` then scales EVERY weight over its cap by the same shortfall factor.
+    counts = sectors.reindex(w.index).fillna("?").value_counts()
+    capacity = float(sum(min(sector_cap, n * name_cap) for n in counts))
+    if capacity < 1.0 - 1e-9:
+        top = ", ".join(f"{s} {n}" for s, n in counts.head(3).items())
+        raise CapsInfeasibleError(
+            f"{len(w)} names across {len(counts)} sectors can hold at most "
+            f"{capacity:.1%} under a {name_cap:.0%} name cap and a {sector_cap:.0%} sector "
+            f"cap, so no fully-invested book satisfies them (concentration: {top}). "
+            f"Diversify the candidate pool or relax a cap — deliberately, not silently.")
+
+    w = w / total
     for _ in range(200):
-        w = _cap_weights(w, name_cap)                      # per-name cap (sum stays 1)
+        w = _cap_names(w, name_cap)                        # per-name cap (sum preserved)
         sec_tot = w.groupby(sectors).sum()
         over = sec_tot[sec_tot > sector_cap + 1e-9]
         if over.empty:
@@ -124,11 +227,30 @@ def _apply_caps(w: pd.Series, sectors: pd.Series,
             members = sectors[sectors == sec].index
             w[members] *= sector_cap / tot
         deficit = 1.0 - w.sum()                            # redistribute to under-cap names
-        head = w[w < name_cap - 1e-9]
-        if head.sum() <= 0:
-            break
-        w[head.index] += deficit * head / head.sum()
-    return w / w.sum()
+        # Redistribute into HEADROOM, not into current weight. The old rule spread the
+        # deficit proportionally across every under-name-cap holding, including ones whose
+        # SECTOR was already at its cap — which pushed that sector straight back over, and
+        # the next pass scaled it down again. On a book with a heavy sector the two steps
+        # simply traded weight back and forth for all 200 passes and the function returned
+        # the oscillating state, over-cap, with no error. Capping the receipt at each name's
+        # remaining room under BOTH caps makes the projection converge instead.
+        sec_tot = w.groupby(sectors).sum()
+        room_name = (name_cap - w).clip(lower=0.0)
+        room_sector = sectors.reindex(w.index).map(
+            lambda s: max(0.0, sector_cap - float(sec_tot.get(s, 0.0))))
+        room = pd.concat([room_name, room_sector.astype(float)], axis=1).min(axis=1)
+        if room.sum() <= 1e-15:
+            break                                          # genuinely no room — verified below
+        w = w + deficit * room / room.sum()
+
+    w = w / w.sum()
+    violations = _caps_violations(w, sectors, name_cap, sector_cap)
+    if violations:
+        # Fail CLOSED. Reaching here means the loop could not satisfy the constraints, which
+        # for a sane pool means the pool itself is degenerate (e.g. every name in one sector).
+        raise CapsInfeasibleError(
+            f"cannot build a capped book from {len(w)} names: " + "; ".join(violations))
+    return w
 
 
 # --------------------------------------------------------------- selection
@@ -164,6 +286,11 @@ def _hit_target_beta(w: pd.Series, betas: pd.Series, sectors: pd.Series, target:
     """
     book_beta = float((w * betas.reindex(w.index)).sum())
     note = None
+    if not np.isfinite(book_beta):
+        # B-4: a NaN book beta used to flow through and be reported as a real number.
+        raise CapsInfeasibleError(
+            f"book beta is {book_beta!r} — at least one holding has no usable beta, so no "
+            f"target can be hit or honestly reported.")
     if target <= book_beta:
         k = max(0.0, target / book_beta) if book_beta > 0 else 0.0
         final = w * k
@@ -171,6 +298,14 @@ def _hit_target_beta(w: pd.Series, betas: pd.Series, sectors: pd.Series, target:
 
     # target > book beta: tilt toward higher-beta names (no leverage available).
     b = betas.reindex(w.index).clip(lower=0)
+    if float(b.sum()) <= 0:
+        # B-4: every beta ≤ 0 and the target is above the book. `w * b` is all-zero, which
+        # used to normalise to NaN weights and then report `achieved_beta = 0.0, cash = 0.0`
+        # — a confident-looking number attached to an unusable book. There is nothing to tilt
+        # toward, so say so.
+        raise CapsInfeasibleError(
+            f"target beta {target:.2f} is above the book's {book_beta:.2f} and no holding has "
+            f"a positive beta to tilt toward — this book cannot reach any higher beta.")
     hi = _apply_caps(w * b, sectors)                       # caps-respecting high-beta book
     hi_beta = float((hi * betas.reindex(hi.index)).sum())
     if hi_beta < target - 1e-6:                            # even max tilt falls short → reset

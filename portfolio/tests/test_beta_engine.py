@@ -65,11 +65,17 @@ def test_cash_sleeve_hits_target_exactly():
 
 
 def test_impossible_target_resets_not_fakes():
-    """target above the max achievable long-only beta → cap + reset note, no leverage."""
-    idx = [f"n{i}" for i in range(8)]
-    w = pd.Series(0.125, index=idx)
-    betas = pd.Series(np.linspace(0.9, 1.3, 8), index=idx)   # max any single name = 1.3
-    sectors = pd.Series("Tech", index=idx)
+    """target above the max achievable long-only beta → cap + reset note, no leverage.
+
+    #28: the fixture was 8 names in ONE sector, which cannot hold a fully-invested book under
+    an 8% name cap (max 64%) — the old `_apply_caps` returned cap-violating weights and this
+    test quietly asserted on them. The pool is now cap-feasible so the test measures beta
+    targeting, which is what it is named for, rather than the B-1/B-2 bug.
+    """
+    idx = [f"n{i}" for i in range(20)]
+    w = pd.Series(0.05, index=idx)
+    betas = pd.Series(np.linspace(0.9, 1.3, 20), index=idx)  # max any single name = 1.3
+    sectors = pd.Series([f"S{i % 5}" for i in range(20)], index=idx)
     final, cash, achieved, note = _hit_target_beta(w, betas, sectors, target=3.0)
     assert note is not None and "exceeds" in note
     assert achieved < 3.0

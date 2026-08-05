@@ -46,6 +46,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+# Safe at module level: sec_provider imports nothing from this package, so there is no cycle.
+from audit.sec_provider import SplitBasisUnavailable
+
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("fund_audit")
@@ -396,6 +399,10 @@ def run_audit(tickers: list[str], api_key: str | None = None, quarters: int = 12
     for i, tk in enumerate(tickers):
         try:
             recs = client.statements(tk, quarters=quarters)
+        except SplitBasisUnavailable:
+            # A missing split basis is not a per-ticker fetch error — it makes every ratio in
+            # the audit wrong at once, so it must not be counted as one bad name (#25 A-2).
+            raise
         except Exception as e:                       # noqa: BLE001
             fetch_errors.append({"ticker": tk, "error": f"{type(e).__name__}: {e}"})
             if i == 0:

@@ -72,6 +72,42 @@ price/direction predictor.
     up exceeds the risk it removes. Uncorrelated is necessary, not sufficient. Report:
     `figures/lab/value_factor.md`.
 
+**Phases 19–26 (product + audit track):** *(added in #28 — the roadmap stopped at 18 while
+the work ran to 26, so these existed only in commit messages and `figures/`.)*
+
+19. ✅ Static web product — **A:** `scripts/export_web_bundle.py` precomputes every number the
+    frontend can display; **B:** `web/`, a backend-free Next.js static export. Hard rule: no
+    number is typed into the frontend; the browser only multiplies weights by capital. Built
+    on the SHIPPED S&P 500 beta engine, explicitly not the #16 mid+large model. Live at
+    https://rankalpha.pages.dev via `make deploy`.
+20. ✅ Wide-universe sector mapping (yfinance + SEC SIC). 100% coverage, and the pie's sector
+    caps went from inert to **binding** (Health 7→5, Tech 6→5). Report:
+    `figures/lab/sector_mapping.md`.
+21. ✅ Regime-segmented backtest — slice the committed history into calm/normal/stressed.
+    **Beta drift measured:** the β0.75 pie realises 0.26 in calm months and 0.78 in stress.
+    In-sample, 2022 is the sole stress episode — directional only. Report:
+    `figures/lab/regime_report.md`. ⚠️ See #28: its momentum comparison book is
+    cap-infeasible, so those numbers were computed on a cap-violating portfolio.
+22. ✅ Ship-ready riders — README ship-window, live demo + artifact links.
+23. ✅ Frontend v2 — Explore (1,200-name browser), Basket (client-side equal-weight
+    scorecard), pie label upgrades. Deployed.
+24. ✅ Explore data hotfix — honest `as_of` (the true data date, never the resampled
+    month-end label, which was a FUTURE date on a live page), a sanity band for artifact
+    stats, and real basket eligibility gated in one place.
+25. ✅ Adversarial self-audit — `AUDIT_FINDINGS.md`, 16 suspicions (6×S1, 6×S2, 4×S3) raised
+    as suspicions for triage, deliberately with **no fixes** in the same commit.
+26. ✅ The forest expedition — wide-panel rebuild + Style & Season Lab. **Headline result is
+    a NULL:** 208 cells tested at a |t| ≥ 3 bar; momentum does not live in a particular style
+    or season. A null grid is a real research result and is kept. Riders 26b/26c/26d excluded
+    non-equities from the universe (SIC + name rule), rebuilt the forest (499/503 S&P, zero
+    non-equities), and filtered commodity/crypto trusts out of the shipped Explore bundle.
+    Report: `figures/lab/style_season_report.md`.
+27. ⏸️ **The Signal Duel** — frozen ML vs plain 12-1 momentum, identical construction.
+    Gated on #25's S1 findings; runs as an *asymmetric* duel (contamination favours the ML,
+    so ML-loses is conclusive and ML-wins is inconclusive pending a clean retrain).
+28. 🔄 Audit fix-pass one — A-3, A-2, B-1/B-2/B-3/B-4, D-1, D-2 and the S3 sweep, each with
+    tests, then the duel.
+
 **Phase 6 experiment backlog (banked, build v1 first):**
 
 - Sector/industry-neutral ranking (rank within sector to remove hidden sector bets).

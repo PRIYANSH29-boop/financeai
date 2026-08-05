@@ -240,7 +240,15 @@ def fallback_shares(tickers, batch: int = 1, cache_path: Path | None = None,
                 so = yf.Ticker(tk).get_info().get("sharesOutstanding")
                 break
             except Exception as e:                       # noqa: BLE001
-                logger.debug("fallback shares failed for %s (attempt %d): %s", tk, attempt + 1, e)
+                # Retries that are about to be retried stay at debug — they are noise. The
+                # LAST one is the name actually being abandoned, and #25/#26b is explicit
+                # that an abandoned name must not hide below the default log level.
+                if attempt == max_retries - 1:
+                    logger.warning("fallback shares GIVING UP on %s after %d attempts: %s",
+                                   tk, max_retries, e)
+                else:
+                    logger.debug("fallback shares failed for %s (attempt %d): %s",
+                                 tk, attempt + 1, e)
                 time.sleep(pause * (2 ** attempt))       # exponential backoff
         cache[tk] = float(so) if pd.notna(pd.to_numeric(so, errors="coerce")) else None
         consecutive = 0 if cache[tk] else consecutive + 1

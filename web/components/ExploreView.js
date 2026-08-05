@@ -17,6 +17,7 @@
 import { useMemo, useState } from "react";
 import { pct, num, beta as fmtBeta } from "../lib/format";
 import { sortRows } from "../lib/explore";
+import { partialMonthNote } from "../lib/disclosure";
 
 const MAX_ROWS = 100;   // keep the DOM light; the count line reports how many matched
 
@@ -101,6 +102,11 @@ export default function ExploreView({ explore, onPickBasket }) {
                 ) : null}
                 . Small caps (&lt;$2B) are excluded by universe methodology.
               </p>
+              {partialMonthNote(explore) ? (
+                <p className="faint" style={{ margin: "6px 0 0" }}>
+                  ⚠ {partialMonthNote(explore)}
+                </p>
+              ) : null}
               {rec ? (
                 <details className="faint" style={{ marginTop: 8, fontSize: "0.8rem" }}>
                   <summary>Why {rec.basket_eligible} of {rec.model_universe} scored names?</summary>

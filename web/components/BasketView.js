@@ -12,6 +12,7 @@
 import { useMemo, useState } from "react";
 import { pct, num, beta as fmtBeta } from "../lib/format";
 import { basketScorecard, outcomeDistribution } from "../lib/basket";
+import { partialMonthNote } from "../lib/disclosure";
 
 const MAX_PICKS = 10;
 
@@ -215,6 +216,7 @@ export default function BasketView({ stocks, index, explore }) {
         <p className="faint" style={{ fontSize: "0.8rem", margin: 0 }}>
           Basket math from per-stock series as of {stocks.as_of}. Benchmark:{" "}
           {stocks.benchmark_label}.
+          {partialMonthNote(stocks) ? <> ⚠ {partialMonthNote(stocks)}</> : null}
         </p>
       </div>
     </main>

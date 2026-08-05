@@ -1,28 +1,41 @@
-# RankAlpha — runtime dependencies (Python 3.10+)
-# Pinned to versions verified working; loosen as needed.
+# RankAlpha — runtime dependencies (Python 3.12; developed and pinned on 3.12.3)
+#
+# EXACT pins, deliberately (#25 finding D-1). Every line used to be `>=`, which contradicts
+# the project's central claim: the LightGBM ranker is FROZEN — fit once on 2024-05-15,
+# never refit — and every published number is a measurement of that one model's scores. A
+# `pip install` that resolved a different LightGBM would silently produce different scores,
+# a different ranking, a different pie, and different figures, while every doc still said
+# "frozen". The JS side already pins exactly (`next 15.5.4`, `react 19.1.1`); this is the
+# side where it actually matters.
+#
+# Versions below are the ones in the venv that produced the committed artifacts.
+# To upgrade: change a pin deliberately, re-run `make test-all`, and re-check the scorecard
+# — never by re-resolving.
 
 # Core data / numerics
-pandas>=2.2
-numpy>=1.26
-pyarrow>=15            # parquet engine for the data + ledger files
+pandas==3.0.2
+numpy==2.4.4
+pyarrow==24.0.0        # parquet engine for the data + ledger files
 
 # Model + explainability
-lightgbm>=4.3          # LGBMRanker (LambdaMART) — the frozen cross-sectional ranker
-shap>=0.45             # per-holding SHAP factor attributions
-scikit-learn>=1.4      # transitive support for shap / model utilities
+# FROZEN-MODEL CRITICAL: the ranker is not refit, so its scores are only reproducible under
+# the LightGBM that fit it. Treat this pin as part of the model artifact, not as a dependency.
+lightgbm==4.6.0        # LGBMRanker (LambdaMART) — the frozen cross-sectional ranker
+shap==0.51.0           # per-holding SHAP factor attributions
+scikit-learn==1.8.0    # transitive support for shap / model utilities
 
 # Product + figures
-streamlit>=1.40        # demo product page (app.py)
-matplotlib>=3.8        # pie / factor / risk / track-record figures
-joblib>=1.3            # on-disk cache of the fitted book + frozen model
+streamlit==1.57.0      # demo product page (app.py)
+matplotlib==3.10.9     # pie / factor / risk / track-record figures
+joblib==1.5.3          # on-disk cache of the fitted book + frozen model
 
 # Data fetching (S&P 500 panel build) + LLM explainer HTTP (Ollama / Groq REST)
-requests>=2.31
-beautifulsoup4>=4.12   # scrape current S&P 500 constituents
-yfinance>=0.2          # analytics/ base analyser — autopilot price loader (any ticker + benchmark)
+requests==2.33.1
+beautifulsoup4==4.14.3 # scrape current S&P 500 constituents
+yfinance==1.3.0        # analytics/ base analyser — autopilot price loader (any ticker + benchmark)
 
 # Test / dev
-pytest>=8              # analytics/ base-analyser unit tests (pytest analytics/tests/ -q)
+pytest==9.1.1          # `make test-all`
 
 # Optional: local LLM explainer (set USE_LLM=1). Requires a separate Ollama install
 # (`ollama serve` + `ollama pull phi3:mini`); no Python package needed — called over HTTP.

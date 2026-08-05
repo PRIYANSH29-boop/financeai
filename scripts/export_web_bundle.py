@@ -349,9 +349,29 @@ def validate_as_of(label: str, as_of, today=None) -> list[str]:
     return []
 
 
+def validate_partial_month(label: str, d: dict) -> list[str]:
+    """A raised partial-month flag must carry the sentence that discloses it (#25 A-3).
+
+    #24 shipped the boolean with nothing to render, and it stayed invisible for a release.
+    Requiring the text at export time means the flag cannot be raised silently again.
+    """
+    if not d.get("axis_last_month_partial"):
+        return []
+    errs = []
+    days = d.get("axis_last_month_days")
+    if not isinstance(days, int) or days <= 0:
+        errs.append(f"{label}: final month is partial but axis_last_month_days={days!r}")
+    text = d.get("axis_last_month_text")
+    if not text or "partial" not in str(text).lower():
+        errs.append(f"{label}: final month is partial but carries no renderable "
+                    f"axis_last_month_text ({text!r})")
+    return errs
+
+
 def validate_stocks(s: dict) -> list[str]:
     """stocks.json invariants — the basket page trusts this completely."""
     errs = validate_as_of("stocks.json", s.get("as_of"))
+    errs += validate_partial_month("stocks.json", s)
     n_dates = len(s.get("dates", []))
     if n_dates == 0:
         errs.append("stocks.json: empty date axis")
@@ -370,6 +390,7 @@ def validate_stocks(s: dict) -> list[str]:
 def validate_explore(e: dict) -> list[str]:
     """explore.json invariants."""
     errs = validate_as_of("explore.json", e.get("as_of"))
+    errs += validate_partial_month("explore.json", e)
     if not e.get("rows"):
         errs.append("explore.json: no rows")
     for r in e.get("rows", []):
@@ -451,6 +472,39 @@ def panel_data_date(panel: pd.DataFrame) -> str:
     future month on a live page. The panel's own max date is the only honest answer.
     """
     return pd.Timestamp(panel["date"].max()).strftime("%Y-%m-%d")
+
+
+def partial_month_disclosure(panel: pd.DataFrame, axis_end) -> dict:
+    """The three fields that disclose a partial final month, for any bundle built on `panel`.
+
+    `_monthly_returns` resamples with `.last()` on 'ME', so a panel ending mid-month yields a
+    final bucket LABELLED at month-end but built from only the days that exist. Every stat
+    downstream — ann_vol (×√12), beta, sharpe, max_drawdown, last_return, the movers cards,
+    every basket scorecard — is then computed on a mixed-length series.
+
+    #24 exported the boolean and nothing rendered it, which is #25's A-3: the disclosure was
+    true, machine-readable, and invisible to the user. So the sentence itself is exported —
+    the frontend has no number to compute and no wording to invent, and `web/lib/disclosure.js`
+    is the single place that decides whether to show it.
+    """
+    partial = bool(axis_end is not None
+                   and pd.Timestamp(panel["date"].max()) < pd.Timestamp(axis_end))
+    if not partial:
+        return {"axis_last_month_partial": False,
+                "axis_last_month_days": None,
+                "axis_last_month_text": None}
+    end = pd.Timestamp(axis_end)
+    start = end.to_period("M").start_time
+    dates = pd.to_datetime(panel["date"])
+    days = int(dates[(dates >= start) & (dates <= end)].nunique())
+    last = pd.Timestamp(panel["date"].max()).strftime("%Y-%m-%d")
+    unit = "trading day" if days == 1 else "trading days"
+    return {
+        "axis_last_month_partial": True,
+        "axis_last_month_days": days,
+        "axis_last_month_text": (f"Final month is partial ({days} {unit} to {last}) — "
+                                 f"stats include it."),
+    }
 
 
 def band_flags(ann_vol, beta) -> list[str]:
@@ -561,8 +615,7 @@ def build_stocks(scored: set[str], names: dict) -> dict:
         # The true last data date, not the month-end bucket label (#24).
         "as_of": panel_data_date(panel),
         "axis_end_label": dates[-1] if dates else None,
-        "axis_last_month_partial": bool(
-            axis_end is not None and pd.Timestamp(panel["date"].max()) < axis_end),
+        **partial_month_disclosure(panel, axis_end),
         "benchmark_label": "equal-weight S&P-500 proxy",
         "periods_per_year": 12,
         "dates": dates,
@@ -705,8 +758,7 @@ def build_explore(eligible: set[str], model_universe: set[str],
         "as_of": panel_data_date(panel),
         "axis_end_label": (pd.Timestamp(axis_end).strftime("%Y-%m-%d") if axis_end is not None
                            else None),
-        "axis_last_month_partial": bool(
-            axis_end is not None and pd.Timestamp(panel["date"].max()) < axis_end),
+        **partial_month_disclosure(panel, axis_end),
         "benchmark_label": "equal-weight wide-universe proxy (beta reference)",
         "cap_threshold_usd": CAP_LARGE_USD,
         "n_names": len(rows),
@@ -839,10 +891,18 @@ def export(out_dir: Path = OUT_DIR, top_n: int = 20, betas=None) -> dict:
         "drawdown": _series(bench.index, _drawdown(bench)),
     }
 
+    # The pie's own stats ride the same resampled monthly axis as the basket's (#25 A-3), so
+    # the receipts panel has to disclose a partial final month too — reading the date column
+    # alone keeps this to a cheap projection of the panel already on disk.
+    sp_dates = pd.read_parquet(SP500_PANEL, columns=["date"])
+    sp_dates["date"] = pd.to_datetime(sp_dates["date"])
+    pie_axis_end = bench.index[-1] if len(bench.index) else None
+
     index = {
         "schema_version": SCHEMA_VERSION,
         "generated_from": "portfolio.beta_engine.build_portfolio (S&P 500 frozen model)",
         "as_of": str(bp["as_of"]),
+        **partial_month_disclosure(sp_dates, pie_axis_end),
         "betas": grid,
         "beta_keys": {f"{b:.2f}": beta_key(b) for b in grid},
         "beta_step": BETA_STEP,
@@ -864,6 +924,7 @@ def export(out_dir: Path = OUT_DIR, top_n: int = 20, betas=None) -> dict:
         "disclaimer": "Educational simulation. No real money. Not investment advice.",
     }
     errors.extend(validate_as_of("index.json", index["as_of"]))
+    errors.extend(validate_partial_month("index.json", index))
     (out_dir / "index.json").write_text(json.dumps(index, separators=(",", ":")))
 
     # #23 — the S&P-500 scored universe (basket-eligible). The frozen model ranks these;

@@ -160,9 +160,10 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
 # 1) Build the dataset (downloads prices; data/ is gitignored and regenerated locally)
-python -m utils.sp500_data        # → data/sp500_panel.parquet
-python -m utils.sp500_features    # → data/sp500_features.parquet
-python -m utils.sp500_labels      # → data/sp500_labeled.parquet
+make pipeline                     # panel → features → labels, in order — the whole of step 1
+python -m utils.sp500_data        # → data/sp500_panel.parquet     (or one stage at a time:
+python -m utils.sp500_features    # → data/sp500_features.parquet    make panel / features /
+python -m utils.sp500_labels      # → data/sp500_labeled.parquet     labels)
 
 # 2) Reproduce the research results
 python -m signals.baseline_momentum   # no-ML baseline
@@ -249,6 +250,9 @@ Three results worth reading:
   characterisation, not a realized track — stated at the top of the report.
 
 ```bash
+make pipeline          # phases 1-3 — rebuild panel/features/labels from a fresh clone
+                       #   (needs network; there is deliberately no train target — the
+                       #    ranker is frozen and must never be refit by a make invocation)
 make audit             # #17 — GO/NO-GO data-quality report (needs network)
 make value             # #18 — value factor A/B (refuses to run unless #17 says GO)
 make universe          # #16 — build the wider universe, retrain, report (needs network, slow)

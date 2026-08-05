@@ -73,7 +73,10 @@ export const hitRate = (r) => (r.length ? r.filter((x) => x > 0).length / r.leng
 */
 export function basketSeries(picks, stocks) {
   const { dates, returns, benchmark_returns: bench } = stocks;
-  const valid = picks.filter((tk) => Array.isArray(returns[tk]));
+  // Dedupe first (#25 B-8). A repeated ticker used to be counted twice: `nPicks` over-stated
+  // the basket, and — worse — with one duplicate plus any other name the repeated name got
+  // double weight in the equal-weight mean, so an "equal-weight basket" quietly wasn't one.
+  const valid = [...new Set(picks)].filter((tk) => Array.isArray(returns[tk]));
   const outDates = [], outBasket = [], outBench = [];
   for (let i = 0; i < dates.length; i++) {
     const vals = valid.map((tk) => returns[tk][i]).filter((v) => v !== null && v !== undefined);

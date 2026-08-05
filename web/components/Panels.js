@@ -11,6 +11,7 @@
 import { useState } from "react";
 import { money, pct, num, pp, beta as fmtBeta } from "../lib/format";
 import { GrowthChart, DrawdownChart } from "./Charts";
+import { partialMonthNote } from "../lib/disclosure";
 
 /* ------------------------------------------------------------------ tooltip */
 export function Info({ text }) {
@@ -321,6 +322,12 @@ export function HonestyPanel({ pie, index, capital }) {
             </span>
           </p>
         )}
+
+        {partialMonthNote(index) ? (
+          <p className="muted" style={{ fontSize: "0.84rem", marginTop: 12 }}>
+            ⚠ {partialMonthNote(index)}
+          </p>
+        ) : null}
 
         <div className="caveats" style={{ marginTop: 16 }}>
           <strong>Read this before you believe any number above.</strong>

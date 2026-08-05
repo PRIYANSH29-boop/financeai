@@ -219,6 +219,17 @@ def ttm(series: pd.DataFrame, col: str = "val") -> pd.Series:
     return pd.Series(out, index=series.index)
 
 
+class SplitBasisUnavailable(RuntimeError):
+    """The split history needed to line up per-share facts with prices could not be obtained.
+
+    #25 finding A-2: this used to be a `logger.warning` and an empty dict. The ledger then
+    skipped the adjustment entirely and paired as-reported per-share figures with
+    split-adjusted prices — the exact NVDA-looks-10×-cheaper bug the #17 audit gate was built
+    to catch, reintroduced silently by a missing import. Every downstream ratio is wrong and
+    nothing crashes, so the only safe behaviour is to refuse to produce numbers at all.
+    """
+
+
 def split_factor(splits: list, when) -> float:
     """Cumulative split ratio applied AFTER `when` — the number that puts an as-reported
     per-share quantity onto today's basis.
@@ -412,7 +423,15 @@ class SECClient:
             return df
         # Put as-reported per-share quantities on the price panel's (today's) split basis.
         # Done outside the cache so the cached XBRL extraction stays raw and re-adjustable.
-        sp = (self.splits or {}).get(ticker)
+        if self.splits is None:
+            # `None` means the split map was never fetched, NOT that this name never split.
+            # Adjusting nothing would silently pair as-reported per-share facts with
+            # split-adjusted prices (#25 A-2), so refuse instead of returning a wrong ledger.
+            raise SplitBasisUnavailable(
+                f"ledger({ticker!r}) needs the split basis, but `splits` was never populated. "
+                f"Call `client.splits = client.fetch_splits(tickers)` first, or set "
+                f"`client.splits = {{}}` to assert deliberately that no name in scope split.")
+        sp = self.splits.get(ticker)
         if sp:
             fac = np.array([split_factor(sp, pe) for pe in df["period_end"]], dtype="float64")
             df["shares"] = df["shares"] * fac
@@ -530,26 +549,37 @@ class SECClient:
 
         SEC XBRL has no reliable split tag, so the corporate-action history comes from the
         same vendor that adjusted the price panel — which is exactly the basis we need to
-        match. Returns {} (and logs) if yfinance is unavailable, in which case per-share
-        quantities stay as-reported and the audit reports the adjustment as not applied.
+        match.
+
+        Raises `SplitBasisUnavailable` if the history cannot be obtained (#25 A-2). It used
+        to return `{}` with a warning, which reads as "no splits exist" and is indistinguishable
+        from it downstream — so the adjustment was skipped and every per-share ratio was
+        silently wrong. An empty result here now means only one thing: fetched fine, no splits.
         """
         cf = Path(cache_dir) / "splits.json"
         if cf.exists() and not refresh:
             return json.loads(cf.read_text())
         try:
             import yfinance as yf
-        except ImportError:
-            logger.warning("yfinance unavailable — split adjustment NOT applied")
-            return {}
+        except ImportError as e:
+            raise SplitBasisUnavailable(
+                "yfinance is not installed, so the split history cannot be fetched. Without "
+                "it, as-reported per-share facts would be paired with split-adjusted prices "
+                "and every ratio would be wrong (see #17/#25 A-2). Install yfinance or supply "
+                f"a cached {cf}.") from e
         tickers = sorted(set(tickers))
         out: dict[str, list] = {}
+        failed: list[int] = []
         for i in range(0, len(tickers), batch):
             chunk = tickers[i:i + batch]
             try:
                 d = yf.download(chunk, start=start, actions=True, progress=False,
                                 auto_adjust=False, group_by="column", threads=True)
-            except Exception as e:                   # noqa: BLE001 — best effort
+            except Exception as e:                   # noqa: BLE001
+                # A dropped chunk is not "these 100 names have no splits" — it is "we do not
+                # know", and continuing would put exactly those names on the wrong basis.
                 logger.warning("split download failed for chunk %d: %s", i // batch, e)
+                failed.append(i // batch)
                 continue
             if "Stock Splits" not in d.columns.get_level_values(0):
                 continue
@@ -562,6 +592,12 @@ class SECClient:
                     out[str(tk)] = [[str(pd.Timestamp(d0).date()), float(v)]
                                     for d0, v in ev.items()]
             logger.info("splits: %d/%d tickers scanned", min(i + batch, len(tickers)), len(tickers))
+        if failed:
+            # Deliberately NOT cached — a partial split map would be reused as if complete.
+            raise SplitBasisUnavailable(
+                f"{len(failed)} of {(len(tickers) + batch - 1) // batch} split-history chunks "
+                f"failed to download (chunks {failed[:5]}). The names in them would be put on "
+                f"the wrong split basis, so no split map is returned or cached.")
         cf.parent.mkdir(parents=True, exist_ok=True)
         cf.write_text(json.dumps(out))
         return out

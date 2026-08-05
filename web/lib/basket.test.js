@@ -125,3 +125,28 @@ test("stocks.json bundle has an as_of stamp and aligned series", () => {
   assert.equal(s.benchmark_returns.length, n);
   for (const tk of Object.keys(s.returns)) assert.equal(s.returns[tk].length, n);
 });
+
+/* ---------------------------------------------------------------- #28 B-8: dedupe */
+
+const dupFixture = {
+  dates: ["2024-01-31", "2024-02-29", "2024-03-31"],
+  returns: { A: [0.10, 0.10, 0.10], B: [-0.10, -0.10, -0.10] },
+  benchmark_returns: [0.0, 0.0, 0.0],
+};
+
+test("B-8: a duplicated pick is counted once, not twice", () => {
+  const once = basketSeries(["A"], dupFixture);
+  const twice = basketSeries(["A", "A"], dupFixture);
+  assert.equal(twice.nPicks, 1, "nPicks must not over-count a duplicate");
+  assert.deepEqual(twice.basket, once.basket);
+});
+
+test("B-8: a duplicate must not get double weight against another name", () => {
+  // The harmful case: mean([A, A, B]) = +0.033 (A weighted 2/3) vs the true
+  // equal-weight mean([A, B]) = 0.0. The old code returned the former.
+  const fair = basketSeries(["A", "B"], dupFixture);
+  const dup = basketSeries(["A", "A", "B"], dupFixture);
+  assert.deepEqual(dup.basket, fair.basket);
+  for (const v of dup.basket) assert.ok(Math.abs(v) < 1e-12, `expected 0, got ${v}`);
+  assert.equal(dup.nPicks, 2);
+});

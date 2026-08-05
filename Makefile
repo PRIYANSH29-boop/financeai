@@ -1,7 +1,32 @@
 # RankAlpha — convenience targets. Uses the repo venv if present.
 PY ?= $(shell [ -x venv/bin/python ] && echo venv/bin/python || echo python3)
 
-.PHONY: analyse lab regimes regimes-backtest audit value universe sectors web-bundle web-dev deploy test test-all
+.PHONY: panel features labels pipeline analyse lab regimes regimes-backtest audit value universe sectors styles web-bundle web-dev deploy test test-all
+
+## ---------------------------------------------------------------- base pipeline (#28 D-2)
+## Phases 1-3 rebuild the artifacts every other target CONSUMES. They had no make targets, so
+## `data/*.parquet` being gitignored meant a fresh clone could not rebuild the pipeline from
+## documented commands at all — the first three phases were tribal knowledge (#25 D-2).
+##
+## There is deliberately NO train target. The ranker is FROZEN (fit 2024-05-15, walk-forward
+## + 21-day embargo) and later phases only measure on top of it; a `make train` would invite
+## exactly the refit the whole project is built to avoid.
+##
+##   make pipeline    # panel -> features -> labels, in order, from a fresh clone
+## NEEDS NETWORK (yfinance + the constituent scrape); slow on first run.
+panel:
+	$(PY) -m utils.sp500_data
+
+## Leakage-checked feature table. Reads data/sp500_panel.parquet.
+features:
+	$(PY) -m utils.sp500_features
+
+## Within-day ranked forward-return labels. Reads the panel + features.
+labels:
+	$(PY) -m utils.sp500_labels
+
+## The three base stages in dependency order.
+pipeline: panel features labels
 
 ## Regenerate the analyser scorecard + charts from committed data (no refit, no network).
 analyse:

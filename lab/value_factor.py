@@ -36,6 +36,7 @@ import numpy as np
 import pandas as pd
 
 from audit.fundamentals import winsorize, zscore, WINSOR_PCT
+from audit.sec_provider import SplitBasisUnavailable
 
 logger = logging.getLogger("value_factor")
 
@@ -66,6 +67,10 @@ def build_fundamentals(tickers, client=None, panel=None, out: Path | None = FUND
     for i, tk in enumerate(tickers):
         try:
             led = client.ledger(tk)
+        except SplitBasisUnavailable:
+            # Not a bad name — a bad BASIS, which is wrong for every name equally. Swallowing
+            # it into `missing` would turn "all our ratios are wrong" into "no data" (#25 A-2).
+            raise
         except Exception as e:                      # noqa: BLE001 — one bad name isn't fatal
             logger.warning("ledger failed for %s: %s", tk, e)
             missing.append(tk)
@@ -101,10 +106,16 @@ def load_fundamentals(path: Path = FUND_PATH) -> pd.DataFrame:
 
 # ------------------------------------------------------------------ point-in-time join
 def as_of(fund: pd.DataFrame, when, lag_days: int = PUBLICATION_LAG_DAYS) -> pd.DataFrame:
-    """The latest filing per ticker that was public strictly before `when`.
+    """The latest filing per ticker published on or before `when - lag_days`.
 
     This is the leakage gate in one line: `publication_date <= when - lag`. Ties on
     publication date are broken by the later fiscal period, which is the fresher report.
+
+    The comparison is `<=`, not `<`. Same-day filings are excluded by the lag, not by the
+    operator, so with the default `PUBLICATION_LAG_DAYS = 1` the effect is "strictly before
+    `when`" — but set the lag to 0 and same-day filings would be admitted. Described
+    precisely here because the previous wording ("strictly before `when`") would have become
+    an active lie the moment anyone changed that constant (#25 D-4).
     """
     cutoff = pd.Timestamp(when) - pd.Timedelta(days=lag_days)
     f = fund[fund["publication_date"] <= cutoff]
