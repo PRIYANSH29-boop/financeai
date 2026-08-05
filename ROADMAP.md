@@ -103,10 +103,23 @@ the work ran to 26, so these existed only in commit messages and `figures/`.)*
     non-equities), and filtered commodity/crypto trusts out of the shipped Explore bundle.
     Report: `figures/lab/style_season_report.md`.
 27. ⏸️ **The Signal Duel** — frozen ML vs plain 12-1 momentum, identical construction.
-    Gated on #25's S1 findings; runs as an *asymmetric* duel (contamination favours the ML,
-    so ML-loses is conclusive and ML-wins is inconclusive pending a clean retrain).
-28. 🔄 Audit fix-pass one — A-3, A-2, B-1/B-2/B-3/B-4, D-1, D-2 and the S3 sweep, each with
-    tests, then the duel.
+    Gated on #25's S1 findings; runs as an *asymmetric* duel: the A-1 contamination favours
+    the ML, so **ML loses ⇒ conclusive (trade momentum); ML wins ⇒ inconclusive** pending a
+    clean retrain. Part B of #28; not yet run.
+28. ✅ **Audit fix-pass one** (Part A) — the six #25 findings the reviewer accepted as the fix
+    list, each with tests. **A-3:** the partial final month is now disclosed, not just
+    flagged (the exporter ships the sentence; a validator refuses a raised flag with nothing
+    to render; one helper renders it on all three surfaces). **A-2:** a missing split basis
+    RAISES — an empty split map can only mean "fetched, none exist". **B-1/B-2/B-3/B-4:** the
+    caps fail CLOSED, with an up-front joint-capacity check; shipped pies verified
+    bit-identical (max |Δw| = 0.0). **D-1:** all deps pinned exactly. **D-2:** `make
+    panel/features/labels/pipeline`, and deliberately no train target. **S3 sweep** cleared.
+    Tests 190 → 243. **Finding:** B-1/B-2 was not latent — #21's momentum book is
+    cap-infeasible (86% max investable) and its published numbers came from a book with
+    Information Technology at 44% against a 30% cap. `make regimes-backtest` now refuses.
+29. 🔄 **The complete project description** — `ARCHITECTURE.md` (every directory, every
+    module, the make-target table, the invariants, the branch map), module docstrings, and
+    this roadmap + the README brought in sync. Documentation only, zero behaviour changes.
 
 **Phase 6 experiment backlog (banked, build v1 first):**
 

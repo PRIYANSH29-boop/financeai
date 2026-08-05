@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(venv/bin/python -m pytest *)",
+      "Bash(./venv/bin/python -m pytest *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(make test-all)",
+      "Bash(make test)",
+      "Bash(make audit-self-test)",
+      "Bash(npm test)",
+      "Bash(npm test *)",
+      "Bash(npm --prefix web test)",
+      "Bash(node --test *)",
+      "mcp__notion__notion-fetch",
+      "mcp__notion__notion-search",
+      "mcp__notion__notion-get-comments"
+    ]
+  }
+}

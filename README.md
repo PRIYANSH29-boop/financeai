@@ -13,6 +13,10 @@ on a single Linux laptop — no cloud required.
 > *methodology demonstration*, not a deployable strategy. Read [LIMITATIONS.md](LIMITATIONS.md)
 > before trusting any number below.
 
+**New here?** [**ARCHITECTURE.md**](ARCHITECTURE.md) explains every directory, every module,
+what it reads and writes, which `make` target runs it, which tests cover it, and the
+invariants the project refuses to break — enough to find your way without asking anyone.
+
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit%20Cloud-FF4B4B?style=flat&logo=streamlit&logoColor=white)](https://financeai-tqrpxdxbsnqcfvrtko5one.streamlit.app/)
 [![β-pie product](https://img.shields.io/badge/β--pie%20product-Cloudflare%20Pages-F38020?style=flat&logo=cloudflare&logoColor=white)](https://rankalpha.pages.dev)
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)
@@ -233,7 +237,12 @@ Every result — including the ones that failed — is committed as a report.
 | 18 | Value factor (E/P + B/M + EBITDA/EV + FCF yield) | **DROP** — uncorrelated with momentum (−0.15…−0.20) but Sharpe falls in every window | [report](figures/lab/value_factor.md) |
 | 19 | Static β-pie web product (Next.js export) | Shipped — every UI number precomputed offline; [live](https://rankalpha.pages.dev) on Cloudflare Pages | [`web/`](web/) |
 | 20 | Wide-universe sector mapping (yfinance + SEC SIC) | Plumbing — 100% coverage; pie sector caps now **binding** (Health 7→5, Tech 6→5), no longer inert | [report](figures/lab/sector_mapping.md) |
-| 21 | Regime-segmented backtest (calm/normal/stressed) | **Beta drift measured** — β0.75 pie 0.26 calm → 0.78 stress; cash sleeve halves stressed drawdown. In-sample, 2022 sole stress episode — directional only | [report](figures/lab/regime_report.md) |
+| 21 | Regime-segmented backtest (calm/normal/stressed) | **Beta drift measured** — β0.75 pie 0.26 calm → 0.78 stress; cash sleeve halves stressed drawdown. In-sample, 2022 sole stress episode — directional only. ⚠️ #28 found its momentum comparison book breaches the sector cap (Info Tech 44% vs a 30% cap) — the regime numbers were computed on a cap-violating portfolio | [report](figures/lab/regime_report.md) |
+| 22–24 | Ship riders · Frontend v2 (Explore · Basket) · Explore data hotfix | Shipped — honest `as_of` (the true data date, never the resampled month-end label, which printed a *future* date on a live page), a sanity band for artifact stats, eligibility gated in one place | [`web/`](web/) |
+| 25 | Adversarial self-audit | 16 suspicions raised (6×S1, 6×S2, 4×S3) and deliberately **no fixes** in the same commit — raising and fixing in one pass is how a finding gets quietly softened | [findings](AUDIT_FINDINGS.md) |
+| 26 | Style & Season Lab + forest rebuild | **NULL RESULT, and it stands** — 208 cells tested at a \|t\| ≥ 3 bar; momentum does not live in a particular style or season. Riders excluded non-equities from the universe and filtered commodity/crypto trusts off the live site | [report](figures/lab/style_season_report.md) |
+| 27 | The Signal Duel — frozen ML vs plain 12-1 momentum | **Not yet run.** Gated on #25's S1 findings, then re-scoped as an *asymmetric* duel: the contamination favours the ML, so ML-loses is conclusive and ML-wins is inconclusive | — |
+| 28 | Audit fix-pass one | Six findings fixed with tests (190 → 243 passing). Caps now **fail closed**; a missing split basis **raises**; the partial-month caveat is rendered, not just exported; deps pinned; `make pipeline` added. Shipped pies bit-identical (max \|Δw\| = 0.0) | [ARCHITECTURE.md](ARCHITECTURE.md) |
 
 Three results worth reading:
 
