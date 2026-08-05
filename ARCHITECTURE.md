@@ -77,8 +77,10 @@ Builds the three artifacts everything else consumes. Rebuilt with `make pipeline
 | `sp500_labels.py` | The label is a **rank**, not a return: forward 21-day return, ranked within its date. Public: `build_labels`, `print_report`. | panel + features | `data/sp500_labeled.parquet` |
 
 **Make:** `make panel` · `make features` · `make labels` · `make pipeline` (all three, in order).
-**Tests:** covered indirectly by `test/test_analytics.py` and the leakage argument in
-`AUDIT_FINDINGS.md` sweep A; there is no dedicated unit-test file — **see Findings §F-2.**
+**Tests:** `test/test_utils_pipeline_f2.py` — 24 tests pinning the *leakage geometry*
+(backward-only, per-ticker, within-date, exactly one deliberate 21-day forward look), plus the
+sanity gate and two tests that pin the known A-1 contaminant. Every assertion is
+mutation-verified: the builders were deliberately broken five ways and each break was caught.
 
 ### `signals/` — phases 4–6, the model and its honest evaluation
 
@@ -281,10 +283,13 @@ published `figures/lab/regime_report.md` numbers were computed on a book with In
 Technology at 44% against a 30% cap. Awaiting a reviewer decision; documented in the table
 above rather than presented as working.
 
-**F-2 — `utils/` has no dedicated test file.** It is the module set that builds features and
-labels — the highest leakage-risk code in the repo — and it is covered only indirectly. It was
-also missing from #25's own sweep-A directory list and from the Notion documentation map
-(finding C-2). Three separate maps of this project have omitted the same directory.
+**F-2 — `utils/` had no dedicated test file. → CLOSED (`5b56b44`).** It is the module set that
+builds features and labels — the highest leakage-risk code in the repo — and it was covered
+only indirectly. It was also missing from #25's own sweep-A directory list and from the Notion
+documentation map (finding C-2): three separate maps of this project omitted the same
+directory. Now covered by `test/test_utils_pipeline_f2.py` (24 tests, mutation-verified).
+The *pattern* remains the finding worth keeping — a directory can be invisible to a
+documentation map, an audit scope and a test suite simultaneously, and nothing complains.
 
 **F-3 — the docstring deliverable was nearly a no-op, which is good news.** 60 of 66 Python
 modules already carried a top-of-file docstring; the 6 without were all *empty*
