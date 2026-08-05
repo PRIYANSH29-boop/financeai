@@ -17,7 +17,7 @@ rate-limited to ~10 req/s with a declared User-Agent.
 
 What this module produces
 -------------------------
-`SECClient.statements(ticker)` returns the SAME record shape `FMPClient.statements` does, so
+`SECClient.statements(ticker)` returns a flat per-quarter record shape, so
 `audit.fundamentals.run_audit` consumes either without change:
 
     {ticker, period_end, publication_date, period, reported_currency,
@@ -541,7 +541,7 @@ class SECClient:
                          how="all")
         return led.reset_index(drop=True)
 
-    # ---------------------------------------------------------------- FMP-shaped API
+    # ------------------------------------------------------------- flat per-quarter API
     @staticmethod
     def fetch_splits(tickers, start="2015-01-01", cache_dir: Path = SEC_CACHE,
                      batch: int = 100, refresh: bool = False) -> dict:
@@ -603,7 +603,7 @@ class SECClient:
         return out
 
     def statements(self, ticker: str, quarters: int = 12) -> list[dict]:
-        """Newest-first records matching `FMPClient.statements`, so `run_audit` is source-agnostic."""
+        """Newest-first flat records — the shape `run_audit` consumes."""
         led = self.ledger(ticker)
         if led.empty:
             return []

@@ -98,7 +98,7 @@ mutation-verified: the builders were deliberately broken five ways and each brea
 | Module | What it does | Reads | Writes |
 |---|---|---|---|
 | `sec_provider.py` | EDGAR XBRL client. Caches a slim per-ticker extraction rather than the multi-MB companyfacts blob. Every fact carries the real `filed` date — the point-in-time weapon. Public: `SECClient` (`.ledger`, `.statements`, `.fetch_splits`, `.cik_candidates`), `split_factor`, `ttm`, and the `SplitBasisUnavailable` exception. | data.sec.gov | `data/sec_cache/` |
-| `fundamentals.py` | The seven-check GO/NO-GO audit: accuracy, coverage, point-in-time, outliers, consistency, survivorship, reproducibility. Also the shared `winsorize` / `zscore` / `value_ratios` helpers. `FMPClient` is the legacy vendor path, unused (the host is unreachable). | provider | `figures/audit/fundamentals_audit.md` |
+| `fundamentals.py` | The seven-check GO/NO-GO audit: accuracy, coverage, point-in-time, outliers, consistency, survivorship, reproducibility. Also the shared `winsorize` / `zscore` / `value_ratios` helpers. Single-source since #30 — the unreachable FMP vendor client was removed (F-4). | provider | `figures/audit/fundamentals_audit.md` |
 
 **Make:** `make audit` (needs network) · `make audit-self-test` (offline, proves the harness).
 **Tests:** `audit/tests/test_fundamentals.py`, `test_sec_provider.py`, `test_split_basis_a2.py`.
@@ -301,7 +301,10 @@ modules already carried a top-of-file docstring; the 6 without were all *empty*
 `test/test_module_docstrings.py`. Reported because "added 6 docstrings" would otherwise read
 as a thin result when the real finding is that the codebase was already documented.
 
-**F-4 — `portfolio/make_bundle.py` and `FMPClient` are live code paths with no live purpose.**
-`make_bundle.py` regenerates the v1.1 Streamlit demo bundle; `FMPClient` targets a host that
-is unreachable and an API key that is unused. Neither is wrong, both are dead weight, and a
-newcomer reading `audit/fundamentals.py` will spend time on a vendor path that never runs.
+**F-4 — dead code with no live purpose. → RESOLVED in #30 Part C, and I was half wrong.**
+`FMPClient` (94 lines) is **deleted**: unreachable host, unused API key, and a second
+implementation of the record parser that no test exercised. Git history preserves it.
+But `portfolio/make_bundle.py` is **kept** — the reviewer's ruling, and correctly: it is not
+dead, it regenerates the bundle the **live v1.1 Streamlit demo** loads, which is the README's
+first link. Its docstring now says so, because the flag itself proved the file was easy to
+mistake for the Cloudflare product's exporter.

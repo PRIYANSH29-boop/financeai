@@ -7,12 +7,12 @@ It verifies fundamentals are real, accurate, complete, and *point-in-time honest
 
 Public surface
 --------------
-    from audit.fundamentals import run_audit, self_test, FMPClient
+    from audit.fundamentals import run_audit, self_test
 
 `scripts/audit_fundamentals.py` is the thin CLI wrapper (like `scripts/analyse.py` over
 `analytics/`). Pure-logic helpers are unit-tested in `audit/tests/`; the network path
-(FMP) is exercised only when an API key + connectivity are present — this module never
-fabricates fundamentals.
+(SEC EDGAR, keyless) is exercised only when connectivity is present — this module never
+fabricates fundamentals, and `--self-test` proves the harness offline.
 """
 
 from .fundamentals import (
@@ -26,12 +26,11 @@ from .fundamentals import (
     detect_outliers,
     assert_point_in_time,
     coverage_map,
-    FMPClient,
     CORE_INPUTS,
 )
 
 __all__ = [
     "run_audit", "self_test", "write_report", "go_no_go",
     "winsorize", "zscore", "value_ratios", "detect_outliers",
-    "assert_point_in_time", "coverage_map", "FMPClient", "CORE_INPUTS",
+    "assert_point_in_time", "coverage_map", "CORE_INPUTS",
 ]

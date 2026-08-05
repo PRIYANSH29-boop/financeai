@@ -1,6 +1,12 @@
 """
 Regenerate the committed hosted-demo bundle — RankAlpha v1.1.
 
+**NOT dead code — this serves the LIVE v1.1 Streamlit demo** (the README's first link).
+#29 finding F-4 flagged it as a path with no live purpose; that was wrong, and the reviewer's
+#30 ruling was KEEP. The static β-pie product on Cloudflare Pages is a *different* deliverable
+(#19, `scripts/export_web_bundle.py`); this one keeps the older Streamlit demo alive, and the
+two must not be confused when tidying up.
+
 A free cloud host (Streamlit Community Cloud) has none of the laptop's `data/` parquets
 and must NOT refit the model or download 500 tickers on boot. This script writes the
 SMALL, self-contained, TRACKED artifacts the hosted app loads directly:

@@ -11,8 +11,6 @@ Thin wrapper over the `audit/` package (mirrors `scripts/analyse.py` over `analy
     python scripts/audit_fundamentals.py --sample 50            # smoke
     python scripts/audit_fundamentals.py                        # full S&P 500 → GO/NO-GO
 
-    # or against FMP, if a key + reachable endpoint exist:
-    python scripts/audit_fundamentals.py --source fmp --fmp-key $FMP_KEY
 
 Writes `figures/audit/fundamentals_audit.md` with the seven-check report and a computed
 GO/NO-GO verdict. It NEVER fabricates data: if the source is unreachable it errors out.
@@ -30,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pandas as pd  # noqa: E402
 
 from audit.fundamentals import (  # noqa: E402
-    run_audit, self_test, write_report, _load_key, REPORT_PATH, CACHE_DIR,
+    run_audit, self_test, write_report, REPORT_PATH, CACHE_DIR,
 )
 
 
@@ -43,9 +41,8 @@ def _load_tickers(path: str, sample: int | None) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="RankAlpha fundamentals data-quality audit (#17)")
-    ap.add_argument("--source", default="sec", choices=["sec", "fmp"],
+    ap.add_argument("--source", default="sec", choices=["sec"],
                     help="fundamentals source (default: sec = EDGAR XBRL, free/keyless)")
-    ap.add_argument("--fmp-key", default=None, help="FMP API key (else FMP_API_KEY / .env)")
     ap.add_argument("--tickers", default="data/sp500_tickers.csv", help="ticker list CSV")
     ap.add_argument("--sample", type=int, default=None, help="audit only the first N tickers")
     ap.add_argument("--quarters", type=int, default=12, help="quarters of history per name")
@@ -63,13 +60,7 @@ def main() -> int:
         print("\nSELF-TEST:", "PASS ✅" if res["all_passed"] else "FAIL ❌")
         return 0 if res["all_passed"] else 1
 
-    key = None
-    if args.source == "fmp":
-        key = _load_key(args.fmp_key)
-        if not key:
-            print("ERROR: no FMP API key (pass --fmp-key, or set FMP_API_KEY / .env).\n"
-                  "       Run `--self-test` to verify the harness offline.", file=sys.stderr)
-            return 2
+    key = None      # EDGAR is keyless; the keyed vendor path was removed in #30 (F-4).
 
     panel = None
     if args.source == "sec":

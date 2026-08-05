@@ -2,15 +2,15 @@
 Fundamentals data-quality audit — Phase 17. The GO/NO-GO gate before the value factor.
 
 ⚠️ EDUCATIONAL SIMULATION context. This module VERIFIES data; it never invents it. If no
-FMP key / no network is available, the audit cannot run and the harness says so — it does
-NOT emit a fake report.
+network is available, the audit cannot run and the harness says so — it does NOT emit a
+fake report.
 
 The seven checks (per the #17 spec)
 -----------------------------------
 1. Accuracy   — spot-check ~10 (ticker, period) values vs a second source (yfinance);
                 report the max relative discrepancy per field.
 2. Coverage   — % of the universe carrying each value-factor input; gaps by sector/size.
-3. Point-in-time — every fundamental must carry a real publication date (FMP `fillingDate`)
+3. Point-in-time — every fundamental must carry a real publication date (EDGAR `filed`)
                 and `fillingDate > period_end`; the value factor is built off the LAGGED
                 publication date, never period-end. This is the leakage gate.
 4. Outliers   — flag impossible values (negative equity, zero denominators, extreme ratios)
@@ -19,13 +19,17 @@ The seven checks (per the #17 spec)
 6. Survivorship — does history include delisted names or only survivors? Documented.
 7. Reproducible — this script + a written report; re-runnable, disk-cached, no eyeballing.
 
-Data sources
-------------
-* **`sec` (default)** — SEC EDGAR XBRL `companyfacts`. Every fact carries `filed`, the real
-  EDGAR publication date, so the point-in-time gate runs against the primary source. Free,
-  keyless, reachable. See `audit/sec_provider.py`.
-* **`fmp`** — Financial Modeling Prep free tier (the source #17 was originally specified
-  against). Same record shape via `FMPClient`. Retained, but unreachable from this machine.
+Data source
+-----------
+**SEC EDGAR XBRL `companyfacts`**, via `audit/sec_provider.py`. Every fact carries `filed`,
+the real EDGAR publication date, so the point-in-time gate runs against the primary source.
+Free, keyless, reachable.
+
+#17 was originally specified against Financial Modeling Prep, and a second `FMPClient`
+provider was carried alongside for it. **#30 removed it** (finding F-4): the host is
+unreachable from this machine, the API key was never used, and a vendor path that cannot run
+is not a fallback — it is a second implementation of the parser that no test exercises. Git
+history preserves it if it is ever needed again.
 
 yfinance is a cross-check source only, for Check 1 — it carries no publication dates, so it
 can never be the point-in-time source.
@@ -53,8 +57,7 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("fund_audit")
 
-FMP_BASE = "https://financialmodelingprep.com/stable"   # v3 legacy retired 2025-08-31
-CACHE_DIR = Path("data/fundamentals_cache")   # gitignored; raw FMP JSON, so re-runs are free
+CACHE_DIR = Path("data/fundamentals_cache")   # gitignored raw provider JSON; re-runs are free
 REPORT_PATH = Path("figures/audit/fundamentals_audit.md")
 
 # The raw fields each value-factor input (from #18) is derived from.
@@ -63,8 +66,8 @@ REPORT_PATH = Path("figures/audit/fundamentals_audit.md")
 CORE_INPUTS = ["eps", "price", "book_value", "ebitda", "enterprise_value",
                "free_cash_flow", "market_cap"]
 
-# ~10 hand-verifiable (ticker, fiscal-period) accuracy spot-checks. `period` is the FMP
-# statement `date` (period end); we compare FMP vs yfinance for these fields.
+# ~10 hand-verifiable (ticker, fiscal-period) accuracy spot-checks, compared against
+# yfinance as the independent cross-source for Check 1.
 SPOT_CHECKS = [
     ("AAPL", "revenue"), ("AAPL", "eps"), ("AAPL", "book_value"),
     ("MSFT", "revenue"), ("MSFT", "eps"), ("MSFT", "book_value"),
@@ -203,100 +206,6 @@ def _sample(r: dict) -> dict:
     return {k: r.get(k) for k in ("ticker", "period_end", "publication_date")}
 
 
-# ============================================================ FMP client (network path)
-@dataclass
-class FMPClient:
-    """Thin FMP free-tier client with on-disk JSON caching + polite rate-limit backoff.
-    Never fabricates: a failed fetch raises / returns [] and is surfaced in the report."""
-    api_key: str
-    cache_dir: Path = CACHE_DIR
-    min_interval: float = 0.30          # seconds between calls (free-tier friendly)
-    _last: float = field(default=0.0, repr=False)
-
-    def _get(self, path: str, **params) -> list | dict:
-        params["apikey"] = self.api_key
-        qs = urllib.parse.urlencode(params)
-        cache_key = urllib.parse.quote(f"{path}?{qs}".replace("apikey=" + self.api_key,
-                                                              "apikey=KEY"), safe="")
-        cf = self.cache_dir / f"{cache_key}.json"
-        if cf.exists():
-            return json.loads(cf.read_text())
-        # polite pacing
-        dt = time.monotonic() - self._last
-        if dt < self.min_interval:
-            time.sleep(self.min_interval - dt)
-        url = f"{FMP_BASE}/{path}?{qs}"
-        for attempt in range(4):
-            try:
-                with urllib.request.urlopen(url, timeout=20) as resp:
-                    data = json.loads(resp.read().decode())
-                self._last = time.monotonic()
-                self.cache_dir.mkdir(parents=True, exist_ok=True)
-                cf.write_text(json.dumps(data))
-                return data
-            except urllib.error.HTTPError as e:
-                if e.code == 429 and attempt < 3:      # rate limited — back off
-                    time.sleep(2 ** attempt)
-                    continue
-                raise
-        return []
-
-    def statements(self, ticker: str, quarters: int = 12) -> list[dict]:
-        """Merge income / balance-sheet / cash-flow / enterprise-value / profile into tidy
-        per-(ticker, period_end, publication_date) records with the CORE_INPUTS fields.
-
-        Uses FMP's current `stable` API: endpoints take `?symbol=`, and the publication
-        date field is `filingDate` (the legacy v3 spelling was `fillingDate`)."""
-        inc = self._get("income-statement", symbol=ticker, period="quarter", limit=quarters)
-        bal = self._get("balance-sheet-statement", symbol=ticker, period="quarter", limit=quarters)
-        cfs = self._get("cash-flow-statement", symbol=ticker, period="quarter", limit=quarters)
-        ev = self._get("enterprise-values", symbol=ticker, period="quarter", limit=quarters)
-        prof = self._get("profile", symbol=ticker)
-        prof0 = prof[0] if isinstance(prof, list) and prof else {}
-
-        bal_by = {r.get("date"): r for r in bal} if isinstance(bal, list) else {}
-        cfs_by = {r.get("date"): r for r in cfs} if isinstance(cfs, list) else {}
-        ev_by = {r.get("date"): r for r in ev} if isinstance(ev, list) else {}
-
-        out = []
-        for r in (inc if isinstance(inc, list) else []):
-            d = r.get("date")
-            b, c, e = bal_by.get(d, {}), cfs_by.get(d, {}), ev_by.get(d, {})
-            out.append({
-                "ticker": ticker,
-                "period_end": d,
-                # publication date: `filingDate` (stable) → `fillingDate` (legacy) → accepted
-                "publication_date": (r.get("filingDate") or r.get("fillingDate")
-                                     or r.get("acceptedDate")),
-                "period": r.get("period"),
-                "reported_currency": r.get("reportedCurrency"),
-                "revenue": r.get("revenue"),
-                "eps": r.get("epsDiluted") if r.get("epsDiluted") is not None else r.get("eps"),
-                "ebitda": r.get("ebitda"),
-                "book_value": b.get("totalStockholdersEquity"),
-                "free_cash_flow": c.get("freeCashFlow"),
-                "enterprise_value": e.get("enterpriseValue"),
-                "market_cap": e.get("marketCapitalization") or prof0.get("marketCap"),
-                "price": prof0.get("price") or e.get("stockPrice"),
-            })
-        return out
-
-
-def _load_key(explicit=None) -> str | None:
-    """Key precedence: --fmp-key > FMP_API_KEY env > .env file. Never logged."""
-    import os
-    if explicit:
-        return explicit.strip()
-    if os.environ.get("FMP_API_KEY"):
-        return os.environ["FMP_API_KEY"].strip()
-    envf = Path(".env")
-    if envf.exists():
-        for line in envf.read_text().splitlines():
-            if line.strip().startswith("FMP_API_KEY"):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return None
-
-
 # ============================================================ accuracy cross-check (Check 1)
 def accuracy_vs_yfinance(records_by_ticker: dict, spot_checks=SPOT_CHECKS) -> dict:
     """Compare our newest value against yfinance for the spot-check fields.
@@ -374,11 +283,8 @@ def make_provider(source: str = "sec", api_key: str | None = None,
     if source == "sec":
         from audit.sec_provider import SECClient, SEC_CACHE
         return SECClient(cache_dir=Path(cache_dir or SEC_CACHE), price_panel=price_panel)
-    if source == "fmp":
-        if not api_key:
-            raise ValueError("source='fmp' needs an API key")
-        return FMPClient(api_key=api_key, cache_dir=Path(cache_dir or CACHE_DIR))
-    raise ValueError(f"unknown source {source!r} (expected 'sec' or 'fmp')")
+    raise ValueError(f"unknown source {source!r} (only 'sec' remains; the FMP vendor path "
+                     f"was removed in #30 — see the module docstring)")
 
 
 def run_audit(tickers: list[str], api_key: str | None = None, quarters: int = 12,
@@ -407,7 +313,7 @@ def run_audit(tickers: list[str], api_key: str | None = None, quarters: int = 12
             fetch_errors.append({"ticker": tk, "error": f"{type(e).__name__}: {e}"})
             if i == 0:
                 raise RuntimeError(
-                    f"FMP fetch failed on the first ticker ({tk}): {e}. Aborting rather "
+                    f"fundamentals fetch failed on the first ticker ({tk}): {e}. Aborting rather "
                     f"than auditing empty data.") from e
             continue
         by_ticker[tk] = recs
@@ -533,7 +439,7 @@ def write_report(report: dict, path: Path = REPORT_PATH) -> Path:
     L = []
     src = report.get("source", "sec")
     src_label = {"sec": "SEC EDGAR XBRL `companyfacts` (primary source, real `filed` dates)",
-                 "fmp": "Financial Modeling Prep free tier"}.get(src, src)
+                 }.get(src, src)
     L.append("# RankAlpha — fundamentals data-quality audit (Phase 17)\n")
     L.append(f"*Reproducible via `python scripts/audit_fundamentals.py --source {src}`. "
              f"Educational SIMULATION. Source: {src_label}; yfinance cross-check only.*\n")
