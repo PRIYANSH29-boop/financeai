@@ -134,8 +134,9 @@ improves the risk-adjusted scorecard. One out of two is a DROP.
 | `value_factor.py` | E/P + book-to-market + EBITDA/EV + FCF yield, winsorized → z-scored → averaged, joined by **publication** date. `as_of()` is the leakage gate. | value **DROP** |
 | `style_lab.py` | Cross-sectional percentile style rules (growth/value/dividend/blue-chip/cyclical/defensive/speculative) + `is_non_equity` (the SIC + name rule that keeps trusts out). | census |
 | `regime_backtest.py` | Slices the *existing* history into calm/normal/stressed and recomputes per pile. Nothing trained, nothing predicted. | β-drift measured |
+| `signal_duel.py` | #27 — momentum vs the frozen ML through identical construction, only the score varying, on the walk-forward OOS frame. Applies a decision rule fixed *before* the run. | **trade momentum** |
 
-**Make:** `make lab` · `make value` · `make styles` · `make regimes-backtest`
+**Make:** `make lab` · `make value` · `make styles` · `make duel` · `make regimes-backtest`
 **Tests:** `lab/tests/` (4 files). `regime_backtest` publishes **two** momentum columns since
 #30 — the repaired one and the retracted uncapped one — because a correction that erases what
 it corrects is not a correction.
@@ -221,6 +222,7 @@ plus a liquidity screen: `shares_outstanding`, `candidates`, `is_non_equity`, `f
 | `styles` | style census + season grids | data | `figures/lab/style_season_report.md` |
 | `regimes` | 2008 + COVID stress test | network | `figures/lab/` |
 | `regimes-backtest` | regime-segmented backtest | data | `figures/lab/regime_report.md` |
+| `duel` | #27 signal duel: ML vs momentum | data | `figures/lab/signal_duel.md` |
 | `audit` | fundamentals GO/NO-GO | network | `figures/audit/` |
 | `audit-self-test` | proves the harness offline | — | exit code |
 | `universe` | wide universe + retrain | network, slow | `data/midlarge_*` |

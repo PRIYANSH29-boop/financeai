@@ -1,7 +1,7 @@
 # RankAlpha — convenience targets. Uses the repo venv if present.
 PY ?= $(shell [ -x venv/bin/python ] && echo venv/bin/python || echo python3)
 
-.PHONY: panel features labels pipeline analyse lab regimes regimes-backtest audit value universe sectors styles web-bundle web-dev deploy test test-all
+.PHONY: panel features labels pipeline analyse lab duel regimes regimes-backtest audit value universe sectors styles web-bundle web-dev deploy test test-all
 
 ## ---------------------------------------------------------------- base pipeline (#28 D-2)
 ## Phases 1-3 rebuild the artifacts every other target CONSUMES. They had no make targets, so
@@ -68,6 +68,11 @@ sectors:
 ## Phase 26 — style census + style x season Rank IC grids (no training; reads the frozen OOS).
 styles:
 	$(PY) scripts/style_season_report.py
+
+## #27/#30 — the Signal Duel: frozen ML vs plain 12-1 momentum, identical construction,
+## scored on the walk-forward OOS frame. No refit. Writes figures/lab/signal_duel.md.
+duel:
+	$(PY) -m lab.signal_duel
 
 ## Phase 21 — regime-segmented backtest: slice the committed history by market weather.
 ## Offline, no refit, no prediction. Writes figures/lab/regime_report.md.

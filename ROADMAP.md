@@ -104,10 +104,14 @@ the work ran to 26, so these existed only in commit messages and `figures/`.)*
     non-equities from the universe (SIC + name rule), rebuilt the forest (499/503 S&P, zero
     non-equities), and filtered commodity/crypto trusts out of the shipped Explore bundle.
     Report: `figures/lab/style_season_report.md`.
-27. ⏸️ **The Signal Duel** — frozen ML vs plain 12-1 momentum, identical construction.
-    Gated on #25's S1 findings; runs as an *asymmetric* duel: the A-1 contamination favours
-    the ML, so **ML loses ⇒ conclusive (trade momentum); ML wins ⇒ inconclusive** pending a
-    clean retrain. Part B of #28; not yet run.
+27. ✅ **The Signal Duel** — frozen ML vs plain 12-1 momentum, identical construction, only
+    the score varying, scored on the walk-forward OOS frame (47 months). **VERDICT: TRADE
+    MOMENTUM, and it is CONCLUSIVE.** After-cost Sharpe 1.79 (momentum) vs 1.41 (ML); the
+    ML's Rank IC edge is real on the full window (0.0505 vs 0.0414) but rests on 2 of 5
+    years, so it fails the pre-stated consistency clause. Conclusive because the A-1
+    contamination *favours* the ML — it lost while carrying an advantage, so a clean retrain
+    can only widen the gap. The ML also turns over LESS (30% vs 48%), so the gap is
+    selection, not cost. Report: `figures/lab/signal_duel.md`.
 28. ✅ **Audit fix-pass one** (Part A) — the six #25 findings the reviewer accepted as the fix
     list, each with tests. **A-3:** the partial final month is now disclosed, not just
     flagged (the exporter ships the sentence; a validator refuses a raised flag with nothing
