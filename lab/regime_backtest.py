@@ -48,8 +48,8 @@ import numpy as np
 import pandas as pd
 
 from portfolio.beta_engine import (
-    build_portfolio, _monthly_returns, _benchmark_returns, _apply_caps,
-    MAX_LOOKBACK, MIN_HISTORY, PPY,
+    build_portfolio, _monthly_returns, _benchmark_returns, _apply_caps, _cap_names,
+    MAX_LOOKBACK, MIN_HISTORY, PPY, NAME_CAP, SECTOR_CAP, SECTOR_MAX_NAMES,
 )
 from analytics.metrics import beta as _beta, max_drawdown
 
@@ -124,13 +124,55 @@ def classify_regimes(bench: pd.Series, vol_window: int = VOL_WINDOW) -> pd.DataF
 
 
 # ================================================================= re-derived momentum book
+def _legacy_uncapped_weights(base: pd.Series, sectors: pd.Series) -> pd.Series:
+    """⚠️ RETRACTED CONSTRUCTION — reproduces the pre-#28 `_apply_caps` exactly, breaches and
+    all. It exists for ONE purpose: to regenerate the momentum column that was published in
+    this report before #28, so the correction can be shown side by side instead of silently
+    overwritten. **Never use it to build a book anyone acts on.**
+
+    The pre-#28 projection alternated cap-and-redistribute for 200 passes and then returned
+    `w / w.sum()` unconditionally. On a pool that cannot satisfy the caps it therefore
+    returned weights that VIOLATED them — here, Information Technology at 44.0% against a
+    30% cap — with no exception and no flag.
+    """
+    w = base / base.sum()
+    for _ in range(200):
+        w = _cap_names(w, NAME_CAP)
+        sec_tot = w.groupby(sectors).sum()
+        over = sec_tot[sec_tot > SECTOR_CAP + 1e-9]
+        if over.empty:
+            break
+        for sec, tot in over.items():
+            members = sectors[sectors == sec].index
+            w[members] *= SECTOR_CAP / tot
+        deficit = 1.0 - w.sum()
+        head = w[w < NAME_CAP - 1e-9]
+        if head.sum() <= 0:
+            break
+        w[head.index] += deficit * head / head.sum()
+    return w / w.sum()                       # <- the unconditional renormalise: the bug
+
+
 def momentum_book(panel: pd.DataFrame, top_n: int = TOP_N,
                   features_path: Path = FEATURES_PATH,
-                  tickers_path: Path = TICKERS_PATH):
+                  tickers_path: Path = TICKERS_PATH,
+                  sector_max_names: int = SECTOR_MAX_NAMES,
+                  legacy_uncapped: bool = False):
     """A pure-momentum book built through the SAME fixed-weight machinery as the pies, so it
     is a true sibling (NOT the #14 realized book): latest-date top-N by mom_12_1m, inverse
     vol_6m weights with the same per-name/per-sector caps, fully invested, measured over the
-    same common window. Returns (port_series, weights)."""
+    same common window. Returns (port_series, weights).
+
+    #30 Part A — selection now applies the pies' own per-sector NAME limit
+    (`SECTOR_MAX_NAMES`), which is what makes the book cap-FEASIBLE by construction. Before
+    this, selection took the raw momentum top-20 with no sector limit, which on the committed
+    panel is 13 of 20 names in Information Technology: a pool that can hold at most 86% under
+    an 8% name cap and a 30% sector cap, so no fully-invested book satisfies them. The old
+    code returned it anyway with Information Technology at 44%. Since #28 the caps fail
+    closed, so that path now raises rather than lying — this is the repair.
+
+    `legacy_uncapped=True` reproduces the retracted pre-#28 book for the correction table.
+    """
     feats = pd.read_parquet(features_path)
     feats["date"] = pd.to_datetime(feats["date"])
     as_of = feats["date"].max()
@@ -144,13 +186,28 @@ def momentum_book(panel: pd.DataFrame, top_n: int = TOP_N,
     eligible = [tk for tk in day["ticker"]
                 if tk in stock_rets and stock_rets[tk].dropna().shape[0] >= MIN_HISTORY]
     day = day[day["ticker"].isin(eligible)].sort_values("mom_12_1m", ascending=False)
-    picked = list(day["ticker"].head(top_n))
+
+    if legacy_uncapped:
+        picked = list(day["ticker"].head(top_n))          # raw top-N, no sector limit
+    else:
+        # Mirror `beta_engine._select`: greedy by score, at most `sector_max_names` per
+        # sector. Same rule as the pies, so the sibling really is a sibling.
+        picked, sec_count = [], {}
+        for tk in day["ticker"]:
+            sec = sectors.get(tk, "?")
+            if sec_count.get(sec, 0) >= sector_max_names:
+                continue
+            picked.append(tk)
+            sec_count[sec] = sec_count.get(sec, 0) + 1
+            if len(picked) == top_n:
+                break
 
     vol6 = day.set_index("ticker").loc[picked, "vol_6m"]
     base = (1.0 / vol6)
     base = base / base.sum()
     sec_p = sectors.reindex(picked).fillna("?")
-    weights = _apply_caps(base, sec_p).sort_values(ascending=False)
+    project = _legacy_uncapped_weights if legacy_uncapped else _apply_caps
+    weights = project(base, sec_p).sort_values(ascending=False)
 
     common = stock_rets[picked].dropna(how="any").tail(MAX_LOOKBACK)
     port = (common[list(weights.index)] * weights.reindex(common.columns)).sum(axis=1)
@@ -191,6 +248,35 @@ def regime_stats(port: pd.Series, bench: pd.Series, labels: pd.Series) -> dict:
     return out
 
 
+def panel_sectors(tickers_path: Path = TICKERS_PATH) -> pd.Series:
+    """ticker -> sector for the S&P file, or an empty Series if the column is absent."""
+    meta = pd.read_csv(tickers_path).set_index("ticker")
+    return meta["sector"] if "sector" in meta else pd.Series(dtype=object)
+
+
+def _sector_profile(w: pd.Series, sectors: pd.Series) -> dict:
+    """The cap evidence for one book: how concentrated it is and whether it breaches.
+
+    Reported for BOTH momentum books so the correction is arithmetic the reader can check,
+    not an assertion they have to take on trust.
+    """
+    sec = sectors.reindex(w.index).fillna("?")
+    tot = w.groupby(sec).sum().sort_values(ascending=False)
+    counts = sec.value_counts()
+    capacity = float(sum(min(SECTOR_CAP, n * NAME_CAP) for n in counts))
+    return {
+        "n_names": int(len(w)),
+        "n_sectors": int(len(counts)),
+        "max_name": float(w.max()),
+        "top_sector": str(tot.index[0]),
+        "top_sector_weight": float(tot.iloc[0]),
+        "top_sector_names": int(counts.get(tot.index[0], 0)),
+        "capacity": capacity,
+        "breaches_name_cap": bool(w.max() > NAME_CAP + 1e-9),
+        "breaches_sector_cap": bool(tot.iloc[0] > SECTOR_CAP + 1e-9),
+    }
+
+
 # ================================================================================= assembly
 def run(make_report: bool = True) -> dict:
     """Build all books on one axis, classify regimes, compute per-regime stats, and (opt.)
@@ -205,9 +291,14 @@ def run(make_report: bool = True) -> dict:
         books[label] = p["monthly_returns"]
         bench = p["benchmark_monthly_returns"] if bench is None else bench
 
-    # 2. the re-derived momentum sibling
-    mom_port, _ = momentum_book(panel, top_n=TOP_N)
+    # 2. the re-derived momentum sibling — capped selection (#30 Part A)
+    mom_port, mom_w = momentum_book(panel, top_n=TOP_N)
     books["Momentum (char.)"] = mom_port
+
+    # 2b. the RETRACTED pre-#28 book, rebuilt only so the correction is visible in the
+    #     report rather than silently replacing the published numbers.
+    legacy_port, legacy_w = momentum_book(panel, top_n=TOP_N, legacy_uncapped=True)
+    books["Momentum (uncapped — retracted)"] = legacy_port
 
     # 3. align everything to ONE common monthly index (the regime axis), incl. benchmark
     common_idx = bench.index
@@ -259,6 +350,10 @@ def run(make_report: bool = True) -> dict:
         "regime_frame": reg,
         "stats": stats,
         "core_stats": core_stats,
+        "momentum_weights": {
+            "capped": _sector_profile(mom_w, panel_sectors(TICKERS_PATH)),
+            "retracted": _sector_profile(legacy_w, panel_sectors(TICKERS_PATH)),
+        },
     }
     if make_report:
         result["report_path"] = str(write_report(result))
@@ -303,12 +398,20 @@ def write_report(result: dict) -> Path:
              "2021-08. The **only** measurable stress episode is the **2022 bear**. "
              "Stressed stats rest on a handful of months and are **DIRECTIONAL — no "
              "significance is claimed.**\n")
+    # Computed, not typed. This caveat used to hardcode "+9.51%/mo" and "1.5x market in
+    # stress" — both of which described the book #30 retracted, so a repair that left the
+    # prose alone would have published a corrected table under a stale warning.
+    _m = result["stats"].get("Momentum (char.)", {})
+    _calm_mean = (_m.get("calm") or {}).get("mean")
+    _calm_b = (_m.get("calm") or {}).get("beta")
+    _str_b = (_m.get("stressed") or {}).get("beta")
     L.append("* **\"Momentum (char.)\"** is re-derived through the pies' fixed-weight "
              "machinery — a sibling of the pies, **not** the #14 walk-forward realized "
-             "book. Its numbers are valid **only as a beta-drift illustration** (near-zero "
-             "calm β → 1.5× market in stress). They are **never quotable as an achievable "
-             "return**: the calm +9.51%/mo figure is a fixed-weights-applied-backward + "
-             "survivorship artifact, not something any investor could have earned.\n")
+             "book. Its numbers are valid **only as a beta-drift illustration** "
+             f"(calm β {_fmt_beta(_calm_b)} → {_fmt_beta(_str_b)} in stress). They are "
+             f"**never quotable as an achievable return**: the calm {_fmt_pct(_calm_mean)}/mo "
+             "figure is a fixed-weights-applied-backward + survivorship artifact, not "
+             "something any investor could have earned.\n")
     L.append("* **Survivorship:** today's S&P 500 members, not point-in-time.\n")
 
     L.append("## Regime calendar (committed rule)\n")
@@ -329,8 +432,49 @@ def write_report(result: dict) -> Path:
     L.append("_(Sanity gate: the 2022 bear lands in 'stressed' ✅. The 2020 crash is absent "
              "by data availability, not by rule error.)_\n")
 
+    # --- #30 Part A: the correction, stated before any number that it changes ------------
+    mw = result.get("momentum_weights")
+    if mw:
+        cap, ret = mw["capped"], mw["retracted"]
+        L.append("## ⛔ Correction (#30) — the momentum column was rebuilt\n")
+        L.append("The momentum sibling published here before 2026-08-05 **violated the very "
+                 "caps this report says it was built under**. Selection took the raw "
+                 f"momentum top-{TOP_N} with no per-sector name limit, which on the committed "
+                 f"panel is **{ret['top_sector_names']} of {ret['n_names']} names in "
+                 f"{ret['top_sector']}**. A pool that concentrated can hold at most "
+                 f"**{ret['capacity']:.1%}** under an {NAME_CAP:.0%} name cap and a "
+                 f"{SECTOR_CAP:.0%} sector cap, so **no fully-invested book satisfies "
+                 "them** — the old projection returned one anyway, over-cap and unflagged.\n")
+        L.append("Selection now applies the pies' own per-sector name limit "
+                 f"(≤{SECTOR_MAX_NAMES}/sector), the same rule `beta_engine._select` uses, "
+                 "which makes the book cap-feasible by construction. **Both columns are "
+                 "shown below.** The retracted one is kept because a correction that erases "
+                 "the thing it corrects is not a correction.\n")
+        L.append("| | Retracted (uncapped selection) | Repaired (#30) |")
+        L.append("|---|---|---|")
+        L.append(f"| Names | {ret['n_names']} | {cap['n_names']} |")
+        L.append(f"| Sectors | {ret['n_sectors']} | {cap['n_sectors']} |")
+        L.append(f"| Largest sector | **{ret['top_sector']} "
+                 f"{ret['top_sector_weight']:.1%}** ({ret['top_sector_names']} names) | "
+                 f"{cap['top_sector']} {cap['top_sector_weight']:.1%} "
+                 f"({cap['top_sector_names']} names) |")
+        L.append(f"| Largest single name | {ret['max_name']:.1%} | {cap['max_name']:.1%} |")
+        L.append(f"| Max investable under both caps | {ret['capacity']:.1%} | "
+                 f"{cap['capacity']:.1%} |")
+        L.append(f"| Breaches the {SECTOR_CAP:.0%} sector cap | "
+                 f"**{'YES' if ret['breaches_sector_cap'] else 'no'}** | "
+                 f"{'YES' if cap['breaches_sector_cap'] else 'no'} |")
+        L.append(f"| Breaches the {NAME_CAP:.0%} name cap | "
+                 f"**{'YES' if ret['breaches_name_cap'] else 'no'}** | "
+                 f"{'YES' if cap['breaches_name_cap'] else 'no'} |")
+        L.append("")
+        L.append("**The pie rows are unaffected and were not re-derived** — #28 verified the "
+                 "shipped pies bit-identical across the whole beta grid (max |Δw| = 0.0), "
+                 "and `lab/tests/test_regime_backtest.py` asserts the pie books stay "
+                 "unchanged by this repair. Only the momentum column moves.\n")
+
     order = ["Pie β0.50", "Pie β0.75", "Pie β1.00",
-             "Momentum (char.)", "EW benchmark"]
+             "Momentum (char.)", "Momentum (uncapped — retracted)", "EW benchmark"]
     for reg in ("calm", "normal", "stressed"):
         L.append(f"## Regime: {reg.upper()}\n")
         L.append("| Book | n | Mean/mo | Vol (ann.) | MaxDD | Realised β | Hit rate |")

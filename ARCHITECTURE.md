@@ -136,7 +136,9 @@ improves the risk-adjusted scorecard. One out of two is a DROP.
 | `regime_backtest.py` | Slices the *existing* history into calm/normal/stressed and recomputes per pile. Nothing trained, nothing predicted. | β-drift measured |
 
 **Make:** `make lab` · `make value` · `make styles` · `make regimes-backtest`
-**Tests:** `lab/tests/` (4 files). ⚠️ `make regimes-backtest` currently **refuses to run** — see Findings §F-1.
+**Tests:** `lab/tests/` (4 files). `regime_backtest` publishes **two** momentum columns since
+#30 — the repaired one and the retracted uncapped one — because a correction that erases what
+it corrects is not a correction.
 
 ### `portfolio/` — the pie engines
 
@@ -276,12 +278,14 @@ cleanup worth doing: fast-forward `main`, delete the stale demo branch, and eith
 
 *Per the #29 rails: behaviour that surprised me is reported here, not quietly fixed.*
 
-**F-1 — `make regimes-backtest` does not currently run.** Its momentum comparison book is 20
-names across 4 sectors (13 Information Technology), which can hold at most 86% under the caps.
-Since #28 made the caps fail closed, it raises instead of returning a cap-violating book. The
-published `figures/lab/regime_report.md` numbers were computed on a book with Information
-Technology at 44% against a 30% cap. Awaiting a reviewer decision; documented in the table
-above rather than presented as working.
+**F-1 — `make regimes-backtest` did not run. → CLOSED in #30 Part A.** Its momentum comparison
+book was 20 names across 4 sectors (13 Information Technology), which can hold at most 86%
+under the caps, so once #28 made the caps fail closed it raised rather than returning a
+cap-violating book. Selection now applies the pies' own ≤5-names/sector rule and the book is
+cap-feasible by construction (7 sectors, largest 27.8%). The retracted column is still
+published beside the repaired one, and tests pin **both**: that the new book satisfies the
+caps, and that the old one still reproduces the exact published breach. The pie rows are
+unchanged — asserted against the published #21 betas, not assumed.
 
 **F-2 — `utils/` had no dedicated test file. → CLOSED (`5b56b44`).** It is the module set that
 builds features and labels — the highest leakage-risk code in the repo — and it was covered

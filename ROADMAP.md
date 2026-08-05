@@ -86,8 +86,10 @@ the work ran to 26, so these existed only in commit messages and `figures/`.)*
 21. ✅ Regime-segmented backtest — slice the committed history into calm/normal/stressed.
     **Beta drift measured:** the β0.75 pie realises 0.26 in calm months and 0.78 in stress.
     In-sample, 2022 is the sole stress episode — directional only. Report:
-    `figures/lab/regime_report.md`. ⚠️ See #28: its momentum comparison book is
-    cap-infeasible, so those numbers were computed on a cap-violating portfolio.
+    `figures/lab/regime_report.md`. **Corrected in #30:** the momentum comparison book was
+    selected without a per-sector name limit and breached the sector cap (Info Tech 44% vs
+    30%); it is rebuilt under the pies' own ≤5-names/sector rule, with the retracted column
+    still published beside it. The pie rows were unaffected and are unchanged.
 22. ✅ Ship-ready riders — README ship-window, live demo + artifact links.
 23. ✅ Frontend v2 — Explore (1,200-name browser), Basket (client-side equal-weight
     scorecard), pie label upgrades. Deployed.

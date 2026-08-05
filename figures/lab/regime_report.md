@@ -10,7 +10,7 @@
 
 * **The 2020 crash is unreachable.** Features begin **2020-06-16**, *after* the Feb–Mar 2020 crash, and the picked names' common history only starts 2021-08. The **only** measurable stress episode is the **2022 bear**. Stressed stats rest on a handful of months and are **DIRECTIONAL — no significance is claimed.**
 
-* **"Momentum (char.)"** is re-derived through the pies' fixed-weight machinery — a sibling of the pies, **not** the #14 walk-forward realized book. Its numbers are valid **only as a beta-drift illustration** (near-zero calm β → 1.5× market in stress). They are **never quotable as an achievable return**: the calm +9.51%/mo figure is a fixed-weights-applied-backward + survivorship artifact, not something any investor could have earned.
+* **"Momentum (char.)"** is re-derived through the pies' fixed-weight machinery — a sibling of the pies, **not** the #14 walk-forward realized book. Its numbers are valid **only as a beta-drift illustration** (calm β 0.253 → 1.178 in stress). They are **never quotable as an achievable return**: the calm +7.64%/mo figure is a fixed-weights-applied-backward + survivorship artifact, not something any investor could have earned.
 
 * **Survivorship:** today's S&P 500 members, not point-in-time.
 
@@ -26,6 +26,24 @@ Rule: `stressed = drawdown < −10% OR trailing-3mo vol in top tercile` · `calm
 
 _(Sanity gate: the 2022 bear lands in 'stressed' ✅. The 2020 crash is absent by data availability, not by rule error.)_
 
+## ⛔ Correction (#30) — the momentum column was rebuilt
+
+The momentum sibling published here before 2026-08-05 **violated the very caps this report says it was built under**. Selection took the raw momentum top-20 with no per-sector name limit, which on the committed panel is **13 of 20 names in Information Technology**. A pool that concentrated can hold at most **86.0%** under an 8% name cap and a 30% sector cap, so **no fully-invested book satisfies them** — the old projection returned one anyway, over-cap and unflagged.
+
+Selection now applies the pies' own per-sector name limit (≤5/sector), the same rule `beta_engine._select` uses, which makes the book cap-feasible by construction. **Both columns are shown below.** The retracted one is kept because a correction that erases the thing it corrects is not a correction.
+
+| | Retracted (uncapped selection) | Repaired (#30) |
+|---|---|---|
+| Names | 20 | 20 |
+| Sectors | 4 | 7 |
+| Largest sector | **Information Technology 44.0%** (13 names) | Communication Services 27.8% (4 names) |
+| Largest single name | 8.0% | 8.0% |
+| Max investable under both caps | 86.0% | 138.0% |
+| Breaches the 30% sector cap | **YES** | no |
+| Breaches the 8% name cap | **no** | no |
+
+**The pie rows are unaffected and were not re-derived** — #28 verified the shipped pies bit-identical across the whole beta grid (max |Δw| = 0.0), and `lab/tests/test_regime_backtest.py` asserts the pie books stay unchanged by this repair. Only the momentum column moves.
+
 ## Regime: CALM
 
 | Book | n | Mean/mo | Vol (ann.) | MaxDD | Realised β | Hit rate |
@@ -33,7 +51,8 @@ _(Sanity gate: the 2022 bear lands in 'stressed' ✅. The 2020 crash is absent b
 | Pie β0.50 | 16 | +1.77% | +4.74% | -0.71% | 0.175 | 87.5% |
 | Pie β0.75 | 16 | +2.66% | +7.11% | -1.06% | 0.263 | 87.5% |
 | Pie β1.00 | 16 | +3.55% | +9.48% | -1.42% | 0.351 | 87.5% |
-| Momentum (char.) | 16 | +9.51% | +26.30% | -2.30% | 0.165 | 81.2% |
+| Momentum (char.) | 16 | +7.64% | +18.25% | -1.02% | 0.253 | 87.5% |
+| Momentum (uncapped — retracted) | 16 | +9.51% | +26.30% | -2.30% | 0.165 | 81.2% |
 | EW benchmark | 16 | +2.48% | +6.12% | -1.13% | 1.000 | 87.5% |
 
 ## Regime: NORMAL
@@ -43,7 +62,8 @@ _(Sanity gate: the 2022 bear lands in 'stressed' ✅. The 2020 crash is absent b
 | Pie β0.50 | 21 | -0.01% | +8.24% | -9.03% | 0.445 | 47.6% |
 | Pie β0.75 | 21 | -0.01% | +12.36% | -13.32% | 0.668 | 47.6% |
 | Pie β1.00 | 21 | -0.01% | +16.48% | -17.46% | 0.890 | 47.6% |
-| Momentum (char.) | 21 | +0.54% | +22.20% | -17.07% | 1.304 | 57.1% |
+| Momentum (char.) | 21 | +0.51% | +20.04% | -16.37% | 1.397 | 47.6% |
+| Momentum (uncapped — retracted) | 21 | +0.54% | +22.20% | -17.07% | 1.304 | 57.1% |
 | EW benchmark | 21 | +0.65% | +13.03% | -7.86% | 1.000 | 57.1% |
 
 ## Regime: STRESSED
@@ -53,7 +73,8 @@ _(Sanity gate: the 2022 bear lands in 'stressed' ✅. The 2020 crash is absent b
 | Pie β0.50 | 22 | +0.42% | +12.68% | -6.10% | 0.521 | 45.5% |
 | Pie β0.75 | 22 | +0.63% | +19.02% | -9.29% | 0.781 | 45.5% |
 | Pie β1.00 | 22 | +0.84% | +25.36% | -12.61% | 1.042 | 45.5% |
-| Momentum (char.) | 22 | +2.51% | +39.28% | -25.69% | 1.524 | 54.5% |
+| Momentum (char.) | 22 | +1.89% | +30.17% | -23.22% | 1.178 | 50.0% |
+| Momentum (uncapped — retracted) | 22 | +2.51% | +39.28% | -25.69% | 1.524 | 54.5% |
 | EW benchmark | 22 | +0.65% | +22.14% | -13.16% | 1.000 | 45.5% |
 
 ### Stressed-CORE — the 6 >10%-drawdown months only (2022 bear, no vol-tercile dilution)
@@ -65,7 +86,8 @@ Months: 2022-06-30, 2022-08-31, 2022-09-30, 2022-10-31, 2022-12-31, 2023-10-31. 
 | Pie β0.50 | 6 | -2.03% | +11.18% | -6.97% | 0.473 | 33.3% |
 | Pie β0.75 | 6 | -3.05% | +16.78% | -10.38% | 0.709 | 33.3% |
 | Pie β1.00 | 6 | -4.07% | +22.37% | -13.85% | 0.946 | 33.3% |
-| Momentum (char.) | 6 | -6.69% | +33.47% | -22.41% | 1.489 | 16.7% |
+| Momentum (char.) | 6 | -4.86% | +31.29% | -15.80% | 1.389 | 16.7% |
+| Momentum (uncapped — retracted) | 6 | -6.69% | +33.47% | -22.41% | 1.489 | 16.7% |
 | EW benchmark | 6 | -3.29% | +22.29% | -11.52% | 1.000 | 16.7% |
 
 ## Calm-β vs stressed-β — the beta-drift number
@@ -75,5 +97,6 @@ Months: 2022-06-30, 2022-08-31, 2022-09-30, 2022-10-31, 2022-12-31, 2023-10-31. 
 | Pie β0.50 | 0.175 | 0.521 | 0.345 |
 | Pie β0.75 | 0.263 | 0.781 | 0.518 |
 | Pie β1.00 | 0.351 | 1.042 | 0.691 |
-| Momentum (char.) | 0.165 | 1.524 | 1.359 |
+| Momentum (char.) | 0.253 | 1.178 | 0.925 |
+| Momentum (uncapped — retracted) | 0.165 | 1.524 | 1.359 |
 | EW benchmark | 1.000 | 1.000 | 0.000 |

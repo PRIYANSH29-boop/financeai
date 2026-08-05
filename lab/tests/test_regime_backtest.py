@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import lab.regime_backtest as rb
 from lab.regime_backtest import classify_regimes, regime_stats, run, DD_STRESS
 
 
@@ -94,3 +95,75 @@ def test_run_smoke_and_sanity_gate():
     assert res["n_months"] > 40
     for reg in ("calm", "normal", "stressed"):
         assert res["stats"]["EW benchmark"][reg]["beta"] in (None, pytest.approx(1.0, abs=1e-9))
+
+
+# ============================================================ #30 Part A — the cap repair
+
+def test_the_repaired_momentum_book_is_cap_feasible():
+    """The repair itself: selection now applies the pies' per-sector name limit, so the book
+    can actually satisfy the caps it is documented as being built under."""
+    panel = pd.read_parquet(rb.PANEL_PATH)
+    panel["date"] = pd.to_datetime(panel["date"])
+    _, w = rb.momentum_book(panel, top_n=rb.TOP_N)
+    prof = rb._sector_profile(w, rb.panel_sectors())
+
+    assert not prof["breaches_sector_cap"], (
+        f"{prof['top_sector']} at {prof['top_sector_weight']:.1%} vs a "
+        f"{rb.SECTOR_CAP:.0%} cap")
+    assert not prof["breaches_name_cap"]
+    assert prof["capacity"] >= 1.0, "a feasible pool must be able to hold a full book"
+    assert prof["top_sector_names"] <= rb.SECTOR_MAX_NAMES
+
+
+def test_the_retracted_book_still_reproduces_the_published_breach():
+    """The correction table is only honest if the 'before' column is the real before. This
+    pins the retracted construction to the exact defect that was published: Information
+    Technology at 44% against a 30% cap, from 13 of 20 names in one sector."""
+    panel = pd.read_parquet(rb.PANEL_PATH)
+    panel["date"] = pd.to_datetime(panel["date"])
+    _, w = rb.momentum_book(panel, top_n=rb.TOP_N, legacy_uncapped=True)
+    prof = rb._sector_profile(w, rb.panel_sectors())
+
+    assert prof["breaches_sector_cap"], "the retracted book is supposed to breach — that is the point"
+    assert prof["top_sector"] == "Information Technology"
+    assert prof["top_sector_weight"] == pytest.approx(0.440, abs=5e-4)
+    assert prof["top_sector_names"] == 13
+    assert prof["capacity"] == pytest.approx(0.86, abs=5e-4)
+
+
+def test_the_repair_does_not_touch_the_pies():
+    """#30's explicit requirement. The pie books are built by the shipped engine and must be
+    unchanged by a momentum-selection repair — these are the published #21 numbers, and the
+    live site still shows them, so a silent drift here would be a retraction we did not make.
+    """
+    res = rb.run(make_report=False)
+    published = {                       # figures/lab/regime_report.md, pre-#30
+        "Pie β0.50": (0.175, 0.521),
+        "Pie β0.75": (0.263, 0.781),    # the β0.75 pair quoted in the README and on the site
+        "Pie β1.00": (0.351, 1.042),
+    }
+    for book, (calm, stressed) in published.items():
+        assert res["stats"][book]["calm"]["beta"] == pytest.approx(calm, abs=5e-4), book
+        assert res["stats"][book]["stressed"]["beta"] == pytest.approx(stressed, abs=5e-4), book
+    assert res["stats"]["EW benchmark"]["calm"]["beta"] == pytest.approx(1.0, abs=1e-9)
+
+
+def test_both_momentum_columns_are_reported():
+    """A correction that quietly replaces the old number is not a correction."""
+    res = rb.run(make_report=False)
+    assert "Momentum (char.)" in res["stats"]
+    assert "Momentum (uncapped — retracted)" in res["stats"]
+    assert res["momentum_weights"]["retracted"]["breaches_sector_cap"] is True
+    assert res["momentum_weights"]["capped"]["breaches_sector_cap"] is False
+
+
+def test_the_repair_changed_the_momentum_answer():
+    """Guards against a repair that is cosmetic. The uncapped book was 13-of-20 in one
+    sector; forcing sector diversification must move its measured beta drift."""
+    res = rb.run(make_report=False)
+    new = res["stats"]["Momentum (char.)"]
+    old = res["stats"]["Momentum (uncapped — retracted)"]
+    new_drift = new["stressed"]["beta"] - new["calm"]["beta"]
+    old_drift = old["stressed"]["beta"] - old["calm"]["beta"]
+    assert old_drift > new_drift + 0.2, (
+        f"expected the concentrated book to drift more: old {old_drift:.3f} vs new {new_drift:.3f}")
