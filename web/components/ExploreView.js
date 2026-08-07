@@ -17,7 +17,7 @@
 import { useMemo, useState } from "react";
 import { pct, num, beta as fmtBeta } from "../lib/format";
 import { sortRows } from "../lib/explore";
-import { partialMonthNote } from "../lib/disclosure";
+import { TrustFooter } from "./Trust";
 
 const MAX_ROWS = 100;   // keep the DOM light; the count line reports how many matched
 
@@ -48,7 +48,7 @@ function MoverCard({ title, rows, tone }) {
   );
 }
 
-export default function ExploreView({ explore, onPickBasket }) {
+export default function ExploreView({ explore, index, onPickBasket }) {
   const [q, setQ] = useState("");
   const [cap, setCap] = useState("all");        // all | mid | large
   const [scoredOnly, setScoredOnly] = useState(false);
@@ -102,11 +102,9 @@ export default function ExploreView({ explore, onPickBasket }) {
                 ) : null}
                 . Small caps (&lt;$2B) are excluded by universe methodology.
               </p>
-              {partialMonthNote(explore) ? (
-                <p className="faint" style={{ margin: "6px 0 0" }}>
-                  ⚠ {partialMonthNote(explore)}
-                </p>
-              ) : null}
+              {/* One inline caveat maximum: Explore's own situational note, plus a
+                  pointer to the full set rather than a second stack of them. */}
+              <TrustFooter index={index} statsBundle={explore} />
               {rec ? (
                 <details className="faint" style={{ marginTop: 8, fontSize: "0.8rem" }}>
                   <summary>Why {rec.basket_eligible} of {rec.model_universe} scored names?</summary>

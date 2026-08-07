@@ -391,3 +391,42 @@ details.expander > .body { padding: 0 20px 20px; }
   .hero-stats { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 12px; }
   .hero-stat-v { font-size: 1.35rem; }
 }
+
+/* ================================================================ #32 WP3 — trust */
+
+/* Calm, not alarming. The stacked red boxes said the right things in the most skippable
+   possible style; these are one line each, quiet, and expand on tap. Red stays reserved
+   for losses — a limitation is not a loss. */
+.trust-expander { margin-top: 4px; }
+.trust-chips { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 6px; }
+
+.trust-chip { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.trust-chip.open { border-color: var(--border-strong); }
+.trust-chip-line {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  font: inherit; font-size: 0.86rem; text-align: left; color: var(--text);
+  background: none; border: none; padding: 11px 13px; cursor: pointer; min-height: 44px;
+}
+.trust-chip-static { margin: 0; cursor: default; }
+.trust-chip-line:not(:disabled):hover { background: var(--surface-3); border-radius: var(--radius-sm); }
+.trust-chip-dot {
+  flex: none; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-faint); margin-top: 7px;
+}
+.trust-chip-text { flex: 1; }
+.trust-chip-caret { flex: none; color: var(--text-faint); font-family: var(--mono); }
+.trust-chip-detail {
+  margin: 0; padding: 0 13px 13px 29px;
+  font-size: 0.84rem; color: var(--text-muted); line-height: 1.55;
+}
+.trust-foot { margin: 12px 0 0; font-size: 0.78rem; color: var(--text-faint); }
+
+/* The one-line version, for panels that are not the disclosure home. */
+.trust-footer {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin: 8px 0 0; font-size: 0.8rem; color: var(--text-muted);
+}
+.trust-footer .trust-chip-dot { align-self: center; margin-top: 0; }
+
+/* A glossary term reads as a word, not a widget — the dotted rule is the only hint. */
+.ra-root .ra-tooltip-trigger { font-size: inherit; }

@@ -12,7 +12,7 @@
 import { useMemo, useState } from "react";
 import { pct, num, beta as fmtBeta } from "../lib/format";
 import { basketScorecard, outcomeDistribution } from "../lib/basket";
-import { partialMonthNote } from "../lib/disclosure";
+import { TrustPanel } from "./Trust";
 
 const MAX_PICKS = 10;
 
@@ -200,10 +200,9 @@ export default function BasketView({ stocks, index, explore }) {
               )}
             </div>
 
-            <div className="caveats">
-              <strong>Read this before you believe any number above.</strong>
-              <ul>{index.caveats.map((c, i) => <li key={i}>{c}</li>)}</ul>
-            </div>
+            {/* WP3: the same sentences, calm and expandable, in the one disclosure
+                home for this tab rather than a stacked red wall. */}
+            <TrustPanel index={index} statsBundle={stocks} />
           </>
         )}
 
@@ -216,7 +215,8 @@ export default function BasketView({ stocks, index, explore }) {
         <p className="faint" style={{ fontSize: "0.8rem", margin: 0 }}>
           Basket math from per-stock series as of {stocks.as_of}. Benchmark:{" "}
           {stocks.benchmark_label}.
-          {partialMonthNote(stocks) ? <> ⚠ {partialMonthNote(stocks)}</> : null}
+          {/* The partial-month note is the first trust chip above, so it is not
+              repeated here — one inline caveat maximum per panel. */}
         </p>
       </div>
     </main>

@@ -33,3 +33,44 @@ export function partialMonthNote(bundle) {
     ? `Final month is partial (${days} trading days) — stats include it.`
     : "Final month is partial — stats include it.";
 }
+
+/*
+  #32 WP3 — the trust chips.
+
+  The stacked red caveat boxes said the right things in the most alarming possible way: a
+  wall of warnings reads as boilerplate and gets skipped, which is the opposite of
+  disclosure. The same sentences now render as calm one-line chips that expand.
+
+  THE RULE THIS FUNCTION EXISTS TO ENFORCE: presentation may change, wording may not. Every
+  chip's visible line is the exporter's string, byte for byte — this file never rewrites,
+  shortens or softens one, and never drops one. The optional `detail` is ADDITIVE: plain
+  English about why the caveat matters, from lib/glossary.js. glossary.test.js asserts the
+  verbatim property against the shipped bundle, so a future edit that paraphrases a
+  disclosure fails the suite rather than shipping.
+*/
+
+import { caveatDetail, PARTIAL_MONTH_DETAIL } from "./glossary.js";
+
+/**
+ * Every disclosure for a bundle, in the order they should be shown.
+ *
+ * Takes the caveat-carrying bundle (index.json) and optionally the bundle whose stats are
+ * on screen (stocks.json / explore.json), because the partial-month note belongs to the
+ * axis being displayed, not to whichever file happened to carry the caveat list.
+ */
+export function trustChips(bundle, statsBundle = bundle) {
+  const chips = [];
+
+  const partial = partialMonthNote(statsBundle);
+  if (partial) {
+    // First, because it is the one that is true *today* rather than always.
+    chips.push({ id: "partial-month", text: partial, detail: PARTIAL_MONTH_DETAIL, transient: true });
+  }
+
+  for (const text of bundle?.caveats ?? []) {
+    if (typeof text !== "string" || !text.trim()) continue;
+    chips.push({ id: text, text, detail: caveatDetail(text), transient: false });
+  }
+
+  return chips;
+}

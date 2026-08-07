@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { money, pct, num, pp, beta as fmtBeta } from "../lib/format";
 import { GrowthChart, DrawdownChart } from "./Charts";
-import { partialMonthNote } from "../lib/disclosure";
+import { Term, TrustPanel } from "./Trust";
 
 /* ------------------------------------------------------------------ tooltip */
 export function Info({ text }) {
@@ -54,8 +54,7 @@ export function ControlBar({ index, capital, setCapital, target, setTarget, pie 
 
         <div>
           <label className="field" htmlFor="beta">
-            Risk level — target beta{" "}
-            <Info text="Beta is how much your pie moves when the market moves. Beta 0.5 means roughly half the market's swing. Cash is how we lower it." />
+            Risk level — <Term k="target beta">target beta</Term>
           </label>
           <input id="beta" type="range" min={grid[0]} max={grid[grid.length - 1]}
                  step={index.beta_step} value={target}
@@ -86,8 +85,7 @@ export function ControlBar({ index, capital, setCapital, target, setTarget, pie 
 
         <div className="readout">
           <span className="muted" style={{ fontSize: "0.82rem" }}>
-            Cash sleeve{" "}
-            <Info text="Cash is how we lower risk — your shock absorber. It has a beta of zero, so the more cash you hold, the less your pie moves with the market." />
+            <Term k="cash sleeve">Cash sleeve</Term>
           </span>
           <span className="big">{pct(pie.cash_weight)}</span>
           <span className="num muted">{money(pie.cash_weight * capital, index.currency)}</span>
@@ -259,10 +257,11 @@ export function HonestyPanel({ pie, index, capital }) {
   // #21 measured regime beta for this preset, if the bundle carries it (only the 3 presets).
   const regime = index.regime_beta?.[pie.target_beta?.toFixed(2)];
 
+  // WP3: this panel IS the disclosure home. Its evidence sits above the trust chips, and
+  // the chips are the only place the caveat set is rendered on this tab.
   return (
-    <details className="expander" open>
-      <summary>How honest is this?</summary>
-      <div className="body">
+    <TrustPanel index={index} defaultOpen>
+      <div>
         <h3 style={{ marginBottom: 8 }}>Growth of {money(capital, index.currency)}</h3>
         <GrowthChart series={pie.equity} benchmark={index.benchmark.equity}
                      capital={capital} currency={index.currency} />
@@ -276,17 +275,17 @@ export function HonestyPanel({ pie, index, capital }) {
 
         <div className="tiles" style={{ marginTop: 18 }}>
           <div className="tile">
-            <div className="k">Sharpe</div>
+            <div className="k"><Term>Sharpe</Term></div>
             <div className="v">{num(sc.sharpe)}</div>
             <div className="sub">return per unit of risk</div>
           </div>
           <div className="tile">
-            <div className="k">Max drawdown</div>
+            <div className="k"><Term k="max drawdown">Max drawdown</Term></div>
             <div className="v loss">{pct(sc.max_drawdown)}</div>
             <div className="sub">worst peak-to-trough fall</div>
           </div>
           <div className="tile">
-            <div className="k">Realised beta</div>
+            <div className="k"><Term k="realised beta">Realised beta</Term></div>
             <div className="v">{fmtBeta(pie.achieved_beta)}</div>
             <div className="sub">
               target {fmtBeta(pie.target_beta)}
@@ -323,18 +322,10 @@ export function HonestyPanel({ pie, index, capital }) {
           </p>
         )}
 
-        {partialMonthNote(index) ? (
-          <p className="muted" style={{ fontSize: "0.84rem", marginTop: 12 }}>
-            ⚠ {partialMonthNote(index)}
-          </p>
-        ) : null}
-
-        <div className="caveats" style={{ marginTop: 16 }}>
-          <strong>Read this before you believe any number above.</strong>
-          <ul>{index.caveats.map((c, i) => <li key={i}>{c}</li>)}</ul>
-        </div>
+        {/* The partial-month note is NOT repeated here — it is the first trust chip
+            below, so this panel keeps to one inline caveat maximum. */}
       </div>
-    </details>
+    </TrustPanel>
   );
 }
 

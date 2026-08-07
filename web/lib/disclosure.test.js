@@ -51,13 +51,31 @@ test("a flag with no exported text still discloses — silence is the bug", () =
    surface that shows partial-month-derived stats actually consumes the helper. */
 
 test("every stats surface renders the disclosure", () => {
+  // #32 WP3 moved the mechanism, not the requirement. Surfaces no longer call
+  // partialMonthNote directly; they mount TrustPanel or TrustFooter, which build their
+  // chips from trustChips(), which calls it. Either route counts — rendering NEITHER is
+  // the A-3 regression this test exists to catch.
   for (const f of ["../components/ExploreView.js", "../components/BasketView.js",
                    "../components/Panels.js"]) {
     const src = readFileSync(new URL(f, import.meta.url), "utf8");
-    assert.match(src, /partialMonthNote/,
-      `${f} shows partial-month-derived stats but never calls partialMonthNote`);
-    assert.match(src, /from "\.\.\/lib\/disclosure"/, `${f} does not import the helper`);
+    assert.match(src, /partialMonthNote|<TrustPanel|<TrustFooter/,
+      `${f} shows partial-month-derived stats but renders no disclosure at all`);
+    assert.match(src, /from "\.\.\/lib\/disclosure"|from "\.\/Trust"/,
+      `${f} does not import a disclosure surface`);
   }
+});
+
+test("the trust chips are wired to the partial-month helper", () => {
+  // The indirection the test above now allows is only safe if the chain actually closes.
+  // This is the link that used to be the direct call.
+  const trust = readFileSync(new URL("../components/Trust.js", import.meta.url), "utf8");
+  assert.match(trust, /trustChips/, "Trust.js does not build its chips from trustChips");
+  const src = readFileSync(new URL("./disclosure.js", import.meta.url), "utf8");
+  assert.match(src, /export function trustChips/);
+  // trustChips must consult partialMonthNote, or every surface silently loses the A-3 note
+  const body = src.slice(src.indexOf("export function trustChips"));
+  assert.match(body, /partialMonthNote\(/,
+    "trustChips no longer consults partialMonthNote — A-3 would go dark on every tab");
 });
 
 test("the shipped bundles carry a renderable disclosure when the flag is up", () => {

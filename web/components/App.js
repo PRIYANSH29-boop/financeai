@@ -46,7 +46,7 @@ export default function App({ index, initialPie, stocks, explore }) {
 
       {tab === "pie" && <PieApp index={index} initialPie={initialPie} />}
       {tab === "explore" && (
-        <ExploreView explore={explore} onPickBasket={() => setTab("basket")} />
+        <ExploreView explore={explore} index={index} onPickBasket={() => setTab("basket")} />
       )}
       {tab === "basket" && <BasketView stocks={stocks} index={index} explore={explore} />}
 
