@@ -11,12 +11,24 @@ target exercises it, and which tests cover it. Every claim describes the code **
 
 ## What RankAlpha is, in one paragraph
 
-RankAlpha ranks S&P 500 stocks each month with a machine-learned **ranking** model (LightGBM
-LambdaMART), turns the top of that ranking into a long-only, risk-capped portfolio at a
-user-chosen market beta, and publishes the whole thing — including its own weaknesses — as a
-backend-free static website. The mission is *"rank by alpha, strip beta"*: find the
-stock-picking signal, then control market exposure deliberately. The model is **frozen** (fit
-once, 2024-05-15); everything built since only *measures* or *constructs* on top of it.
+RankAlpha ranks S&P 500 stocks each month, turns the top of that ranking into a long-only,
+risk-capped portfolio at a user-chosen market beta, and publishes the whole thing — including
+its own weaknesses — as a backend-free static website. The mission is *"rank by alpha, strip
+beta"*: find the stock-picking signal, then control market exposure deliberately.
+
+**What does the ranking? 12-1 momentum — not the ML.** That is the outcome of #27/#30/#31 and
+it is the single most important thing to know before reading any of the code below. A
+LightGBM LambdaMART ranker was built first, is **frozen** (fit 2024-05-15), and is still here:
+it is the shipped historical record, the research instrument, and the thing every honesty
+artifact was built around. It lost a pre-registered three-arm campaign to plain momentum on
+the long-only product book — after being cleaned of its one known leak, after being rebuilt in
+a rival library, and while carrying the higher Rank IC throughout.
+
+That last part is the finding, not a footnote: **the ML is a better ranker of the whole
+cross-section and that skill has no home in a 20-name long-only pie.** In a long/short decile
+book it beats momentum decisively (Sharpe 1.19 vs 0.77). The retail pie stays long-only by
+product definition, so the skill stays stranded, so momentum drives the product. Nothing about
+the model was deleted or hidden — see `figures/lab/last_stand.md`.
 
 ## Data flow
 
@@ -49,6 +61,9 @@ once, 2024-05-15); everything built since only *measures* or *constructs* on top
              value_factor             beta_engine.py — beta-target
              style_lab                paper_trade.py — forward track
              regime_backtest
+             signal_duel  ─┐
+             last_stand    ├─ #27/#31: which SCORE drives the product?
+             long_short   ─┘   answer: 12-1 momentum. The ML stays research.
                                          │
                                          ▼
                         scripts/export_web_bundle.py  ──► web/public/bundle/*.json
@@ -245,10 +260,15 @@ is frozen; a `make train` sitting next to `make pipeline` is an invitation to re
 
 ## Invariants (do not break these)
 
+0. **The product engine is 12-1 momentum** (post-#31). Momentum + low-vol tilt + inverse-vol
+   sizing + cash-sleeve beta targeting. The ML is the research instrument and the historical
+   record; it does not drive the product. This was decided by a criterion fixed *before* the
+   evidence existed, so re-opening it needs a new pre-registration, not a better-looking number.
 1. **The model is FROZEN.** Fit 2024-05-15, walk-forward + 21-day embargo. Feature, analytics
-   and portfolio phases only measure or construct on top of the same scores. The single
-   exception is #16, which trained a *separate, clearly-labelled* model on a wider universe
-   and kept the old one — and whose headline was then rejected.
+   and portfolio phases only measure or construct on top of the same scores. Two *separate,
+   clearly-labelled* models exist and neither replaced it: #16's wide-universe model (headline
+   rejected) and #31's v2 A-1-fixed model (lost its rematch). A new model is always a new
+   artifact, never an overwrite.
 2. **Educational simulation.** No real money, no advice, survivorship caveat on every report.
 3. **No forward projections, ever.** The only permitted answer to "what will I get?" is the
    distribution of past outcomes. A test asserts no forward-return field exists in the bundle.
@@ -259,7 +279,10 @@ is frozen; a `make train` sitting next to `make pipeline` is an invitation to re
    because the UI still says "max 8% per stock".
 7. **Fail loud, never silently wrong.** Missing split basis raises; a future-dated `as_of`
    fails the export; a partial final month must be disclosed, not merely flagged.
-8. **Negative results are published.** The rejected Sharpe 1.81, the dropped value factor, the
+8. **A challenger beats the incumbent on pre-stated terms or not at all.** The #27 rules and
+   the #31 criterion were both fixed before any number was seen and applied as arithmetic.
+   Three arms produced the same answer; none of them got to argue for itself afterwards.
+9. **Negative results are published.** The rejected Sharpe 1.81, the dropped value factor, the
    208-cell null grid. They are the credibility.
 
 ---
