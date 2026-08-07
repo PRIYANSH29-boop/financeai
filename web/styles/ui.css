@@ -1,0 +1,317 @@
+/*
+  RankAlpha UI kit — Frontend v3, WP1.
+
+  The styles for components/ui/*. Written entirely against the `--ra-*` tokens: there is
+  not a raw colour, radius or duration below, so re-theming is a tokens.css edit and the
+  tokens.test.js integrity check can prove nothing here references a token that is not
+  defined.
+
+  Everything is scoped under `.ra-root` for the same reason tokens are: this file must be
+  incapable of touching the v1 pages until a package opts in.
+*/
+
+/* ================================================================= card */
+.ra-root .ra-card {
+  background: var(--ra-surface);
+  border: 1px solid var(--ra-border);
+  border-radius: var(--ra-radius);
+  box-shadow: var(--ra-shadow-1);
+  padding: var(--ra-space-5);
+}
+.ra-root .ra-card-flush { padding: 0; overflow: hidden; }
+
+/* ================================================================= wordmark */
+.ra-root .ra-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ra-space-2);
+  color: var(--ra-text);
+  text-decoration: none;
+  font-weight: var(--ra-weight-bold);
+  letter-spacing: var(--ra-tracking-tight);
+  line-height: 1;
+}
+.ra-root .ra-wordmark .ra-wordmark-mark { display: block; flex: none; }
+/* The ladder rises INTO the accent — the mark says "rank" without a caption. */
+.ra-root .ra-wordmark .ra-wordmark-rung { fill: var(--ra-text-faint); }
+.ra-root .ra-wordmark .ra-wordmark-rung-top { fill: var(--ra-accent); }
+.ra-root .ra-wordmark .ra-wordmark-alpha { color: var(--ra-accent); }
+
+/* ================================================================= chip */
+/*
+  Chip = a small interactive control (preset, filter, toggle, dismissable pick).
+  Badge = the same silhouette but inert. They are separate components on purpose: a
+  reader should never have to guess whether a pill is clickable.
+*/
+.ra-root .ra-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ra-space-2);
+  font: inherit;
+  font-size: var(--ra-text-sm);
+  line-height: 1;
+  padding: 9px var(--ra-space-3);
+  min-height: var(--ra-tap);
+  border-radius: var(--ra-radius-pill);
+  border: 1px solid var(--ra-border-strong);
+  background: var(--ra-surface-2);
+  color: var(--ra-text);
+  cursor: pointer;
+  transition: background var(--ra-dur-fast) var(--ra-ease),
+              border-color var(--ra-dur-fast) var(--ra-ease),
+              color var(--ra-dur-fast) var(--ra-ease);
+}
+.ra-root .ra-chip:hover:not(:disabled) {
+  background: var(--ra-surface-3);
+  border-color: var(--ra-accent-line);
+}
+.ra-root .ra-chip[aria-pressed="true"],
+.ra-root .ra-chip.is-selected {
+  background: var(--ra-accent-soft);
+  border-color: var(--ra-accent);
+  color: var(--ra-accent-strong);
+  font-weight: var(--ra-weight-medium);
+}
+.ra-root .ra-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Compact variant for dense rows (table filters, inline tags). Below the 44px tap
+   floor by design — only legal where the row is not a primary touch target, which is
+   why it carries its own name rather than a size prop that could be used anywhere. */
+.ra-root .ra-chip-sm {
+  min-height: 0;
+  padding: 4px var(--ra-space-2);
+  font-size: var(--ra-text-xs);
+}
+
+.ra-root .ra-chip-loss {
+  border-color: var(--ra-loss-line);
+  color: var(--ra-loss);
+  background: var(--ra-loss-soft);
+}
+
+/* The dismiss affordance on a removable chip. */
+.ra-root .ra-chip-dismiss {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: var(--ra-text-md);
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.7;
+}
+.ra-root .ra-chip-dismiss:hover { opacity: 1; }
+
+/* ================================================================= badge */
+.ra-root .ra-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ra-space-1);
+  font-size: var(--ra-text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--ra-tracking-wide);
+  font-weight: var(--ra-weight-medium);
+  line-height: 1;
+  padding: 5px var(--ra-space-3);
+  border-radius: var(--ra-radius-pill);
+  border: 1px solid var(--ra-border);
+  background: var(--ra-surface-2);
+  color: var(--ra-text-muted);
+  white-space: nowrap;
+}
+.ra-root .ra-badge-accent {
+  border-color: var(--ra-accent-line);
+  background: var(--ra-accent-soft);
+  color: var(--ra-accent-strong);
+}
+.ra-root .ra-badge-loss {
+  border-color: var(--ra-loss-line);
+  background: var(--ra-loss-soft);
+  color: var(--ra-loss);
+}
+/* Numeric badges (a beta readout, a weight) drop the uppercase treatment — a number is
+   not a label and must stay monospace. */
+.ra-root .ra-badge-num {
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--ra-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--ra-text-sm);
+}
+
+/* ================================================================= tooltip */
+.ra-root .ra-tooltip { position: relative; display: inline-flex; align-items: center; }
+
+/* The trigger is a real button so it is reachable by keyboard and by tap, not a
+   hover-only affordance that a phone can never open. */
+.ra-root .ra-tooltip-trigger {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-align: left;
+}
+.ra-root .ra-tooltip-term {
+  border-bottom: 1px dotted var(--ra-border-strong);
+}
+.ra-root .ra-tooltip-trigger:hover .ra-tooltip-term { border-bottom-color: var(--ra-accent); }
+
+.ra-root .ra-tooltip-dot {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid var(--ra-border-strong);
+  color: var(--ra-text-muted);
+  font-family: var(--ra-font-sans);
+  font-size: 10px;
+  line-height: 13px;
+  text-align: center;
+}
+.ra-root .ra-tooltip-trigger:hover .ra-tooltip-dot {
+  border-color: var(--ra-accent);
+  color: var(--ra-accent);
+}
+
+.ra-root .ra-tooltip-bubble {
+  position: absolute;
+  bottom: calc(100% + var(--ra-space-2));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: max-content;
+  max-width: 260px;
+  padding: var(--ra-space-3);
+  background: var(--ra-surface-3);
+  color: var(--ra-text);
+  border: 1px solid var(--ra-border-strong);
+  border-radius: var(--ra-radius-sm);
+  box-shadow: var(--ra-shadow-2);
+  font-size: var(--ra-text-sm);
+  font-weight: var(--ra-weight-regular);
+  text-transform: none;
+  letter-spacing: normal;
+  line-height: var(--ra-leading-normal);
+  animation: ra-fade var(--ra-dur-fast) var(--ra-ease) both;
+}
+.ra-root .ra-tooltip-below {
+  bottom: auto;
+  top: calc(100% + var(--ra-space-2));
+}
+/* Near a viewport edge the bubble pins to the trigger's own edge instead of centring,
+   so it cannot render off-screen on a phone. */
+.ra-root .ra-tooltip-start { left: 0; transform: none; }
+.ra-root .ra-tooltip-end { left: auto; right: 0; transform: none; }
+
+/* ================================================================= expander */
+.ra-root .ra-expander {
+  border: 1px solid var(--ra-border);
+  border-radius: var(--ra-radius);
+  background: var(--ra-surface);
+}
+.ra-root .ra-expander > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--ra-space-3);
+  padding: var(--ra-space-4) var(--ra-space-5);
+  min-height: var(--ra-tap);
+  font-weight: var(--ra-weight-bold);
+  border-radius: var(--ra-radius);
+}
+.ra-root .ra-expander > summary::-webkit-details-marker { display: none; }
+.ra-root .ra-expander > summary:hover { background: var(--ra-surface-2); }
+.ra-root .ra-expander-hint {
+  margin-left: auto;
+  font-weight: var(--ra-weight-regular);
+  font-size: var(--ra-text-sm);
+  color: var(--ra-text-muted);
+}
+.ra-root .ra-expander-caret {
+  flex: none;
+  color: var(--ra-text-muted);
+  transition: transform var(--ra-dur) var(--ra-ease);
+}
+.ra-root .ra-expander[open] > summary .ra-expander-caret { transform: rotate(180deg); }
+.ra-root .ra-expander[open] > summary { border-radius: var(--ra-radius) var(--ra-radius) 0 0; }
+.ra-root .ra-expander-body {
+  padding: 0 var(--ra-space-5) var(--ra-space-5);
+  animation: ra-fade-rise var(--ra-dur) var(--ra-ease-out) both;
+}
+
+/* ================================================================= chart chrome */
+/* The bits every SVG chart shares, so axes and grids cannot drift between charts. */
+.ra-root .ra-chart { display: block; width: 100%; }
+.ra-root .ra-chart-grid { stroke: var(--ra-grid); stroke-width: 1; }
+.ra-root .ra-chart-axis { stroke: var(--ra-axis); stroke-width: 1; }
+.ra-root .ra-chart-tick {
+  font-family: var(--ra-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  fill: var(--ra-axis-ink);
+}
+.ra-root .ra-chart-series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.ra-root .ra-chart-benchmark { fill: none; stroke: var(--ra-benchmark); stroke-width: 1.5; stroke-dasharray: 3 3; }
+
+/* A legend is present whenever a chart carries two or more series — identity is never
+   colour alone. */
+.ra-root .ra-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ra-space-2) var(--ra-space-4);
+  font-size: var(--ra-text-xs);
+  color: var(--ra-text-muted);
+}
+.ra-root .ra-legend-item { display: inline-flex; align-items: center; gap: var(--ra-space-2); }
+.ra-root .ra-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: none;
+}
+.ra-root .ra-legend-swatch-line {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px solid currentColor;
+}
+.ra-root .ra-legend-swatch-dash {
+  width: 14px;
+  height: 0;
+  border-radius: 0;
+  border-top: 2px dashed var(--ra-benchmark);
+}
+
+/* ================================================================= demo page */
+/* Only used by the /design gallery — the system documenting itself. */
+.ra-root .ra-demo { max-width: var(--ra-measure); margin: 0 auto; padding: var(--ra-space-7) var(--ra-space-5) var(--ra-space-9); }
+.ra-root .ra-demo h2 {
+  font-size: var(--ra-text-md);
+  margin: var(--ra-space-8) 0 var(--ra-space-4);
+  padding-bottom: var(--ra-space-2);
+  border-bottom: 1px solid var(--ra-border);
+}
+.ra-root .ra-demo h3 { font-size: var(--ra-text-sm); color: var(--ra-text-muted); margin: var(--ra-space-5) 0 var(--ra-space-3); font-weight: var(--ra-weight-medium); }
+.ra-root .ra-demo-row { display: flex; flex-wrap: wrap; gap: var(--ra-space-3); align-items: center; }
+.ra-root .ra-demo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: var(--ra-space-3); }
+.ra-root .ra-demo-swatch {
+  border: 1px solid var(--ra-border);
+  border-radius: var(--ra-radius-sm);
+  overflow: hidden;
+  background: var(--ra-surface);
+}
+.ra-root .ra-demo-swatch-chip { height: 48px; }
+.ra-root .ra-demo-swatch-meta { padding: var(--ra-space-2) var(--ra-space-3); display: flex; justify-content: space-between; gap: var(--ra-space-2); font-size: var(--ra-text-2xs); }
+.ra-root .ra-demo-note { color: var(--ra-text-muted); font-size: var(--ra-text-sm); max-width: 62ch; }
+.ra-root .ra-demo-scale { display: flex; flex-direction: column; gap: var(--ra-space-2); }
+.ra-root .ra-demo-space { background: var(--ra-accent-soft); border-left: 2px solid var(--ra-accent); height: 14px; }
+
+@media (max-width: 620px) {
+  .ra-root .ra-demo { padding: var(--ra-space-5) var(--ra-space-4) var(--ra-space-8); }
+}

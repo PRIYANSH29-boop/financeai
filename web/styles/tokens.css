@@ -1,0 +1,196 @@
+/*
+  RankAlpha design tokens — Frontend v3, WP1.
+
+  The direction (#32): from "an honest report" to "a living instrument" — a dark
+  quant-terminal surface, ONE signature accent, monospace numbers, purposeful motion.
+
+  Three rules encoded here so they cannot drift component to component:
+
+    1. Every token is namespaced `--ra-*` and defined on `.ra-root`, NOT on `:root`.
+       The v1 light tokens in app/globals.css own `:root`; keeping the two namespaces
+       disjoint means this file cannot restyle a single existing pixel. A page opts in
+       by wrapping its tree in `.ra-root`, which is how WP2/WP3/WP4 will adopt it.
+
+    2. Red is a semantic, not a palette entry — losses and warnings only. It is
+       deliberately absent from the categorical chart slots (see chartTheme.js), so a
+       series can never impersonate a loss.
+
+    3. Every colour pair here was measured, not chosen by eye. Ink-on-surface ratios are
+       asserted in components/ui/tokens.test.js; the chart ramps were generated and
+       validated with the data-viz palette validator (report in chartTheme.js).
+
+  No number, disclosure or bundle field is touched by anything in this file.
+*/
+
+.ra-root {
+  color-scheme: dark;
+
+  /* ---------------------------------------------------------------- surfaces */
+  --ra-bg: #0a0d12;           /* the page plane */
+  --ra-surface: #12171f;      /* cards, panels, chart surface */
+  --ra-surface-2: #181e28;    /* insets: tiles, table headers, wells */
+  --ra-surface-3: #212936;    /* hover / pressed */
+  --ra-border: #232b37;       /* hairline */
+  --ra-border-strong: #36414f;/* inputs, focusable edges */
+  --ra-overlay: rgba(6, 9, 13, 0.72);
+
+  /* ---------------------------------------------------------------- ink */
+  --ra-text: #e7ecf3;         /* 15.1:1 on surface */
+  --ra-text-muted: #9ba6b6;   /*  7.3:1 on surface */
+  --ra-text-faint: #8592a3;   /*  5.3:1 on surface-2 — captions stay legible */
+  --ra-text-inverse: #0a0d12;
+
+  /* ---------------------------------------------------------------- accent */
+  /* One signature hue (OKLCH H 182). --ra-accent is the UI step; charts use their own
+     band-checked steps from chartTheme.js — same hue, stepped for the mark's job. */
+  --ra-accent: #2dd4bf;
+  --ra-accent-strong: #5eead4;
+  --ra-accent-dim: #23a897;
+  --ra-accent-soft: rgba(45, 212, 191, 0.12);
+  --ra-accent-line: rgba(45, 212, 191, 0.38);
+  --ra-accent-glow: rgba(45, 212, 191, 0.22);
+
+  /* ---------------------------------------------------------------- semantics */
+  /* Losses and warnings ONLY. Never a series, never decoration. */
+  --ra-loss: #ff6b6b;
+  --ra-loss-soft: rgba(255, 107, 107, 0.12);
+  --ra-loss-line: rgba(255, 107, 107, 0.38);
+
+  /* A weight drift, a delta in percentage points, a "measured, not promised" figure:
+     information, not a loss. Neutral bright ink, never red, never accent. */
+  --ra-num-neutral: #c3cbd8;
+
+  /* Cash is a first-class slice with a reserved, deliberately quiet colour — 3.9:1 on
+     surface, so it is a legible mark rather than a hole in the chart. */
+  --ra-cash: #69778a;
+
+  /* ---------------------------------------------------------------- chart chrome */
+  --ra-grid: rgba(231, 236, 243, 0.07);
+  --ra-axis: #36414f;
+  --ra-axis-ink: #8592a3;
+  --ra-benchmark: #8592a3;    /* the "not us" series: muted ink + a dash, never a hue */
+
+  /* ---------------------------------------------------------------- type */
+  --ra-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  --ra-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --ra-text-2xs: 0.68rem;
+  --ra-text-xs: 0.75rem;
+  --ra-text-sm: 0.85rem;
+  --ra-text-base: 1rem;
+  --ra-text-md: 1.12rem;
+  --ra-text-lg: 1.4rem;
+  --ra-text-xl: 1.8rem;
+  --ra-text-2xl: 2.4rem;
+  --ra-text-hero: 3.2rem;     /* the one figure a page leads with */
+
+  --ra-weight-regular: 400;
+  --ra-weight-medium: 520;
+  --ra-weight-bold: 640;
+
+  --ra-leading-tight: 1.2;
+  --ra-leading-normal: 1.55;
+  --ra-tracking-tight: -0.02em;
+  --ra-tracking-wide: 0.08em;  /* eyebrow labels only */
+
+  /* ---------------------------------------------------------------- space */
+  --ra-space-1: 4px;
+  --ra-space-2: 8px;
+  --ra-space-3: 12px;
+  --ra-space-4: 16px;
+  --ra-space-5: 20px;
+  --ra-space-6: 24px;
+  --ra-space-7: 32px;
+  --ra-space-8: 44px;
+  --ra-space-9: 64px;
+
+  /* ---------------------------------------------------------------- shape */
+  --ra-radius-sm: 6px;
+  --ra-radius: 10px;
+  --ra-radius-lg: 16px;
+  --ra-radius-pill: 999px;
+
+  --ra-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ra-shadow-2: 0 2px 6px rgba(0, 0, 0, 0.42), 0 10px 28px rgba(0, 0, 0, 0.34);
+  --ra-shadow-3: 0 12px 44px rgba(0, 0, 0, 0.55);
+  --ra-ring: 0 0 0 2px var(--ra-accent-glow);
+
+  /* ---------------------------------------------------------------- motion */
+  /* Purposeful: a number settling, a slice morphing, a panel arriving. Nothing loops. */
+  --ra-dur-fast: 120ms;
+  --ra-dur: 220ms;
+  --ra-dur-slow: 420ms;
+  --ra-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ra-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---------------------------------------------------------------- layout */
+  --ra-measure: 1180px;       /* page max-width, unchanged from v1 */
+  --ra-tap: 44px;             /* minimum tap target (WP4 verifies against this) */
+
+  background: var(--ra-bg);
+  color: var(--ra-text);
+  font-family: var(--ra-font-sans);
+  font-size: 15px;
+  line-height: var(--ra-leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A page that adopts the system paints the whole viewport, not just its own box. */
+.ra-root.ra-page {
+  min-height: 100vh;
+}
+
+/* ------------------------------------------------------------------ primitives */
+
+/* Every number in the product is monospace and tabular, so columns line up and digits
+   do not jitter while a slider moves. This is a type-scale rule, not a component. */
+.ra-root .ra-num {
+  font-family: var(--ra-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.ra-root .ra-eyebrow {
+  font-size: var(--ra-text-2xs);
+  text-transform: uppercase;
+  letter-spacing: var(--ra-tracking-wide);
+  color: var(--ra-text-muted);
+}
+
+.ra-root .ra-muted { color: var(--ra-text-muted); }
+.ra-root .ra-faint { color: var(--ra-text-faint); }
+.ra-root .ra-loss { color: var(--ra-loss); }
+.ra-root .ra-pos { color: var(--ra-accent); }
+.ra-root .ra-neutral { color: var(--ra-num-neutral); }
+
+/* One focus treatment everywhere, keyboard-visible and never removed. */
+.ra-root :focus-visible {
+  outline: 2px solid var(--ra-accent);
+  outline-offset: 2px;
+  border-radius: var(--ra-radius-sm);
+}
+
+/* ------------------------------------------------------------------ motion utils */
+@keyframes ra-fade-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes ra-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.ra-root .ra-rise { animation: ra-fade-rise var(--ra-dur-slow) var(--ra-ease-out) both; }
+.ra-root .ra-fade { animation: ra-fade var(--ra-dur) var(--ra-ease) both; }
+
+/* Motion is an enhancement. If the reader has asked for less, they get none — the
+   layout and every number are identical either way. */
+@media (prefers-reduced-motion: reduce) {
+  .ra-root, .ra-root * {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
