@@ -62,16 +62,81 @@ Worth stating plainly because it cuts against my own earlier framing: the asymme
 
 ---
 
-## Arm 2 — XGBoost · *not yet run*
+## Arm 2 — XGBoost: is it the library?
 
-One controlled rival on identical features/labels/protocol, answering "is it the library?". AdaBoost is excluded by instruction: a superseded boosting family whose inclusion would add a multiple-testing cost for no new information. Ensembles only if an arm beats momentum on its own — losers are not ensembled.
+**Answer: no.** One controlled rival on identical features, label, folds and embargo — `signals/xgb_ranker.py` swaps the estimator into the SAME `walk_forward`, so the protocol is shared code rather than a second implementation that would have to be trusted to match.
 
-## Arm 3 — long/short research book · *not yet run*
+Two parameters do not map cleanly across the libraries and are named rather than buried: `num_leaves=15` has no XGBoost equivalent (leaf-wise vs depth-wise growth — capacities are close at `max_depth=4`, shapes differ), and `min_child_samples=100` (a row count) becomes `min_child_weight=100`, which is not the same quantity for a ranking objective. **No tuning** — a hyperparameter search is out of scope by the #31 rails.
 
-Decile long/short, market-neutral, same costs plus a documented borrow-cost assumption, scored by v2. A **research sleeve** — it does not compete for the product engine, because the retail pie stays long-only by product definition.
+| Book | n | Ann. return | Ann. vol | Sharpe | Sortino | MaxDD | Mean Rank IC | t |
+|---|---|---|---|---|---|---|---|---|
+| A · Momentum (12-1) *(control)* | 47 | +23.93% | +12.51% | 1.792 | 3.317 | -12.03% | 0.0414 | 1.58 |
+| B · v2 ML (A-1 fixed) | 47 | +21.47% | +14.23% | 1.448 | 2.662 | -14.70% | 0.0492 | 1.61 |
+| B · XGBoost | 47 | +21.63% | +13.59% | 1.520 | 2.801 | -14.17% | 0.0523 | 1.74 |
+
+**Verdict: XGBoost does not earn the engine either.** Sharpe 1.520 vs momentum's 1.792; Rank IC consistency 40% (2 of 5 years) — and it wins IC in **the same years** as the LGBM models, 2023 and 2025.
+
+It is the best of the three ML books (1.520 vs 1.448 for v2 and 1.407 for v1) and carries the highest Rank IC (0.0523) on the lowest turnover (+25.34%). It still loses to momentum by a wide margin, and it loses it the same way, in the same years. **The gap is the signal's, not the library's** — which is exactly what this arm was run to establish, and the claim is bounded accordingly: the same configuration in another library does not rescue the signal, NOT that no configuration could.
 
 ---
 
-## Closure statement · *pending arms 2 and 3*
+## Arm 3 — the long/short research sleeve
 
-Arm 1 verdict: **momentum keeps the engine.** The clean v2 model loses on after-cost Sharpe (1.448 vs 1.792) and fails the consistency clause (40% of years). Under the pre-stated criterion that is not a marginal result to be revisited — it is the answer the criterion was written to produce.
+**Research only.** The retail pie stays long-only by product definition (#30 ruling); this competes for a place on the site as a second, clearly labelled research track, never for the product engine.
+
+Construction: long the top decile, short the bottom decile, inverse-vol within each leg normalised to |sum| = 1 (±100% per leg, 200% gross, market-neutral by construction), monthly, 10 bps/side, **plus a 1.00%/yr borrow charge on the short leg's gross exposure**.
+
+### First — did the monotonicity survive the A-1 fix?
+
+This was the check to run before building anything: if the ML's near-monotone decile profile had been leak-driven, the whole long/short case would have collapsed with it. Mean forward return by score decile (%/mo):
+
+| Score | D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | Monotonicity |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **ML v2** | +0.94 | +0.81 | +0.99 | +0.97 | +1.05 | +1.23 | +1.37 | +1.71 | +2.31 | +4.27 | **+0.98** |
+| **Momentum** | +1.67 | +1.12 | +1.20 | +1.11 | +1.19 | +1.34 | +1.44 | +1.47 | +1.62 | +3.50 | **+0.50** |
+
+**It survived — and strengthened.** The clean v2 model is *more* monotone than the contaminated v1 was (+0.98 vs +0.94). Momentum stays at +0.50 with its bottom decile the second-BEST of the ten: extreme 12-1 losers bounce, so a momentum-scored short leg shorts the wrong names. The asymmetry the short-sleeve proposal rested on is real and is not an artifact of A-1.
+
+### The book — after costs and borrow, 47 rebalances
+
+| Book | Sharpe | Ann. return | Ann. vol | MaxDD | Mean Rank IC | Turnover | Hit rate |
+|---|---|---|---|---|---|---|---|
+| **ML v2** | **1.194** | +30.60% | +24.85% | -26.26% | 0.0492 | +135.55% | 62% |
+| Momentum | **0.771** | +13.83% | +19.05% | -20.37% | 0.0414 | +129.40% | 64% |
+
+### Borrow sensitivity — a book that works at only one rate is not a book
+
+| Borrow (bps/yr) | 0 | 50 | 100 | 200 | 500 |
+|---|---|---|---|---|---|
+| ML v2 Sharpe | +1.23 | +1.21 | +1.19 | +1.15 | +1.04 |
+| Momentum Sharpe | +0.82 | +0.80 | +0.77 | +0.72 | +0.56 |
+
+The ML's edge over momentum in this vehicle survives every borrow assumption tested, out to 500 bps — far past anything plausible for S&P 500 names.
+
+### What this does and does NOT show
+
+**Does:** in its natural vehicle the ML beats momentum decisively — Sharpe **1.194 vs 0.771** — the mirror image of the long-only result, and with the clean model. "Mis-deployed, not useless" is now measured twice, on both sides of the vehicle.
+
+**Does NOT:** beat the product's own engine. Momentum's LONG-ONLY book scores 1.792 — higher than this long/short book's 1.194, at a third of the drawdown (-12.03% vs -26.26%) and without shorting anything. The research sleeve is better than momentum *in that vehicle*; it is not better than what the product already ships.
+
+**Survivorship cuts hardest here.** Every decile has a positive mean return, including D0 — the signature of a current-constituents universe over a bull window. The short leg loses money outright and pays only relatively. The names that would have been the best shorts collapsed and left the index, so they are absent entirely. A market-neutral book returning +30.60% a year on this data should be read as a characterisation of a biased sample, not as an achievable return.
+
+**Borrow is an assumption, not a measurement.** Real borrow is per-name, time-varying, and worst exactly where a short signal is strongest.
+
+---
+
+---
+
+## Closure statement
+
+**The product engine is 12-1 momentum. The question is closed.**
+
+Three arms, all pre-registered, all published win or lose:
+
+1. **Clean the model** — A-1 fixed. Moved Sharpe by +0.041 and Rank IC by −0.0013. The contamination was never carrying the ML.
+2. **Change the library** — XGBoost. Best of the three ML books and still 0.273 Sharpe behind momentum, losing in the same years. The gap is the signal's.
+3. **Change the vehicle** — long/short. Here the ML wins decisively (1.194 vs 0.771) — but this arm never competed for the engine, and the book it produces is still worse than the long-only momentum product on both Sharpe and drawdown.
+
+**The ML's role, stated plainly:** it is a better ranker of the whole cross-section than momentum is — Rank IC says so in every arm — and that skill has no home in a 20-name long-only retail pie. It remains the research instrument, the shipped historical record, and the natural score for a long/short research track if one is ever published. It does not drive the product.
+
+Nothing here was decided after seeing a number. The criterion was fixed before the first arm ran, applied as arithmetic, and it produced the same answer three times from three different directions.

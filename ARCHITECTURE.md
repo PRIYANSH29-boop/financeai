@@ -88,7 +88,8 @@ mutation-verified: the builders were deliberately broken five ways and each brea
 | Module | What it does | Reads | Writes |
 |---|---|---|---|
 | `baseline_momentum.py` | The zero-ML bar: classic 12-1 momentum, long top decile, inverse-vol sized, monthly rebalance, costs. If the model can't beat this, the model is a bug. Public: `rebalance_dates`, `backtest_scores`, `run_backtest`, `compute_metrics`. | labeled | backtest artifacts |
-| `lgbm_ranker.py` | LightGBM **LambdaMART** (`rank:` objective) trained walk-forward with a 21-day embargo. Public: `walk_forward`, `run`. **This is the module that fits the frozen model; nothing else may refit it.** | labeled | frozen model + `data/sp500_oos_walkforward.parquet` |
+| `lgbm_ranker.py` | LightGBM **LambdaMART** (`rank:` objective) trained walk-forward with a 21-day embargo. Public: `walk_forward` (accepts a `fit_fold` override so a rival library runs the identical protocol), `run`. **This is the module that fits the frozen model; nothing else may refit it.** | labeled | frozen model + `data/sp500_oos_walkforward.parquet` |
+| `xgb_ranker.py` | #31 Arm 2 — the controlled XGBoost rival. Swaps only the estimator into the shared `walk_forward`. Research only; never shipped, never the product engine. | labeled v2 | `data/sp500_oos_walkforward_xgb.parquet` |
 | `evaluate.py` | Rank IC, decile spreads, after-cost Sharpe, sub-period stability, cost sensitivity, feature importance. Public: `ic_timeseries`, `sharpe`, `subperiod_stability`, `cost_sensitivity`, `feature_importance`. | OOS predictions | figures |
 | `sic_sectors.py` | SIC → GICS-ish sector table, the #20 fallback (source B) when yfinance has no sector. Public: `sic_to_sector`. | — | — |
 
@@ -136,8 +137,10 @@ improves the risk-adjusted scorecard. One out of two is a DROP.
 | `style_lab.py` | Cross-sectional percentile style rules (growth/value/dividend/blue-chip/cyclical/defensive/speculative) + `is_non_equity` (the SIC + name rule that keeps trusts out). | census |
 | `regime_backtest.py` | Slices the *existing* history into calm/normal/stressed and recomputes per pile. Nothing trained, nothing predicted. | β-drift measured |
 | `signal_duel.py` | #27 — momentum vs the frozen ML through identical construction, only the score varying, on the walk-forward OOS frame. Applies a decision rule fixed *before* the run. | **trade momentum** |
+| `last_stand.py` | #31 — the ML's three-arm final campaign: clean the model, change the library, change the vehicle. Writes all three verdicts and the closure statement. | **momentum keeps the engine** |
+| `long_short.py` | #31 Arm 3 — decile long/short research sleeve with a charged, sensitivity-tested borrow assumption. Research only; the retail pie stays long-only. | ML wins the vehicle |
 
-**Make:** `make lab` · `make value` · `make styles` · `make duel` · `make regimes-backtest`
+**Make:** `make lab` · `make value` · `make styles` · `make duel` · `make v2` · `make xgb` · `make last-stand` · `make regimes-backtest`
 **Tests:** `lab/tests/` (4 files). `regime_backtest` publishes **two** momentum columns since
 #30 — the repaired one and the retracted uncapped one — because a correction that erases what
 it corrects is not a correction.
@@ -224,6 +227,8 @@ plus a liquidity screen: `shares_outstanding`, `candidates`, `is_non_equity`, `f
 | `regimes` | 2008 + COVID stress test | network | `figures/lab/` |
 | `regimes-backtest` | regime-segmented backtest | data | `figures/lab/regime_report.md` |
 | `duel` | #27 signal duel: ML vs momentum | data | `figures/lab/signal_duel.md` |
+| `v2` / `xgb` | #31 build the A-1-fixed model / the XGBoost rival | data | `data/*_v2, *_xgb.parquet` |
+| `last-stand` | #31 all three arms + closure | data | `figures/lab/last_stand.md` |
 | `audit` | fundamentals GO/NO-GO | network | `figures/audit/` |
 | `audit-self-test` | proves the harness offline | — | exit code |
 | `universe` | wide universe + retrain | network, slow | `data/midlarge_*` |

@@ -123,6 +123,16 @@ the work ran to 26, so these existed only in commit messages and `figures/`.)*
     Tests 190 → 243. **Finding:** B-1/B-2 was not latent — #21's momentum book is
     cap-infeasible (86% max investable) and its published numbers came from a book with
     Information Technology at 44% against a 30% cap. `make regimes-backtest` now refuses.
+31. ✅ **The ML's Last Stand** — three pre-registered arms, then the question closes.
+    **Arm 1 (clean v2, A-1 fixed):** moved Sharpe +0.041 and Rank IC −0.0013 — the
+    contamination was never carrying the ML. **Arm 2 (XGBoost, identical protocol):** best
+    of the three ML books (Sharpe 1.520) and still 0.27 behind momentum, losing in the same
+    years — the gap is the signal's, not the library's. **Arm 3 (long/short research
+    sleeve):** here the ML wins decisively (1.194 vs 0.771) and its decile monotonicity
+    SURVIVED the A-1 fix (+0.98) — but it never competed for the engine, and the book is
+    still worse than the long-only momentum product on Sharpe and drawdown.
+    **CLOSURE: the product engine is 12-1 momentum. The ML is the research instrument and
+    the historical record.** Report: `figures/lab/last_stand.md`.
 29. 🔄 **The complete project description** — `ARCHITECTURE.md` (every directory, every
     module, the make-target table, the invariants, the branch map), module docstrings, and
     this roadmap + the README brought in sync. Documentation only, zero behaviour changes.

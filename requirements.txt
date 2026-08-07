@@ -22,6 +22,7 @@ pyarrow==24.0.0        # parquet engine for the data + ledger files
 # the LightGBM that fit it. Treat this pin as part of the model artifact, not as a dependency.
 lightgbm==4.6.0        # LGBMRanker (LambdaMART) — the frozen cross-sectional ranker
 shap==0.51.0           # per-holding SHAP factor attributions
+xgboost==3.2.0         # #31 Arm 2 — the controlled rival ranker; research only, not shipped
 scikit-learn==1.8.0    # transitive support for shap / model utilities
 
 # Product + figures

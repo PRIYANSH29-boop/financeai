@@ -82,12 +82,19 @@ def _fit_fold(train: pd.DataFrame) -> LGBMRanker:
     return model
 
 
-def walk_forward(df: pd.DataFrame, return_models: bool = False):
+def walk_forward(df: pd.DataFrame, return_models: bool = False, fit_fold=None):
     """Expanding-window walk-forward with 21d embargo. Returns OOS rows + model_score.
 
     If return_models=True, also returns the list of per-fold fitted models (used by the
     Phase 6 evaluation for feature importance — no retraining needed).
+
+    `fit_fold` overrides the estimator (#31 Arm 2). It takes the fold's training frame and
+    returns anything with `.predict(X)`. Everything else — fold boundaries, the expanding
+    window, the 21-day embargo, the group structure, the feature list, the label — stays in
+    this one function, so a rival library runs the IDENTICAL protocol by construction rather
+    than by a second implementation that has to be trusted to match.
     """
+    fit_fold = fit_fold or _fit_fold
     df = df.sort_values(["date", "ticker"]).reset_index(drop=True)
     dates = np.sort(df["date"].unique())
     n = len(dates)
@@ -104,7 +111,7 @@ def walk_forward(df: pd.DataFrame, return_models: bool = False):
         train = df[df["date"].isin(train_dates)]
         test = df[df["date"].isin(test_dates)].copy()
 
-        model = _fit_fold(train)
+        model = fit_fold(train)
         test["model_score"] = model.predict(test[FEATURES])
         oos_parts.append(test)
         models.append(model)

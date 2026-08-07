@@ -1,7 +1,7 @@
 # RankAlpha — convenience targets. Uses the repo venv if present.
 PY ?= $(shell [ -x venv/bin/python ] && echo venv/bin/python || echo python3)
 
-.PHONY: panel features labels pipeline analyse lab duel v2 last-stand regimes regimes-backtest audit value universe sectors styles web-bundle web-dev deploy test test-all
+.PHONY: panel features labels pipeline analyse lab duel v2 xgb last-stand regimes regimes-backtest audit value universe sectors styles web-bundle web-dev deploy test test-all
 
 ## ---------------------------------------------------------------- base pipeline (#28 D-2)
 ## Phases 1-3 rebuild the artifacts every other target CONSUMES. They had no make targets, so
@@ -81,6 +81,10 @@ v2:
 ## #31 — the ML's Last Stand: arm 1 rematch (v1 vs v2 vs momentum). Writes figures/lab/last_stand.md.
 last-stand:
 	$(PY) -m lab.last_stand
+
+## #31 Arm 2 — train the XGBoost challenger on the v2 features, identical protocol.
+xgb:
+	$(PY) -c "import sys;sys.path.insert(0,'.');import pandas as pd;from signals.lgbm_ranker import walk_forward;from signals.xgb_ranker import fit_fold;d=pd.read_parquet('data/sp500_labeled_v2.parquet');d['date']=pd.to_datetime(d['date']);walk_forward(d,fit_fold=fit_fold).to_parquet('data/sp500_oos_walkforward_xgb.parquet',index=False)"
 
 ## Phase 21 — regime-segmented backtest: slice the committed history by market weather.
 ## Offline, no refit, no prediction. Writes figures/lab/regime_report.md.

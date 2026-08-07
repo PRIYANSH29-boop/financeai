@@ -26,16 +26,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
+
+from lab.long_short import BORROW_ANNUAL, run as ls_run
 from lab.signal_duel import (
     BOOK_A, MIN_CONSISTENCY, OOS_PATH, _n, _p, _row, run as duel_run,
 )
 
 OOS_V1 = OOS_PATH
 OOS_V2 = Path("data/sp500_oos_walkforward_v2.parquet")
+OOS_XGB = Path("data/sp500_oos_walkforward_xgb.parquet")
 REPORT_PATH = Path("figures/lab/last_stand.md")
 
 V1_LABEL = "B · v1 ML (A-1 contaminated)"
 V2_LABEL = "B · v2 ML (A-1 fixed)"
+XGB_LABEL = "B · XGBoost"
 
 
 def arm1(make_report: bool = True) -> dict:
@@ -43,6 +48,18 @@ def arm1(make_report: bool = True) -> dict:
     v1 = duel_run(make_report=False, oos_path=OOS_V1, ml_label=V1_LABEL)
     v2 = duel_run(make_report=False, oos_path=OOS_V2, ml_label=V2_LABEL)
     result = {"v1": v1, "v2": v2, "verdict": v2["verdict"]}
+    if make_report:
+        result["report_path"] = str(write_report(result))
+    return result
+
+
+def run_all(make_report: bool = True) -> dict:
+    """All three arms + the closure statement."""
+    v1 = duel_run(make_report=False, oos_path=OOS_V1, ml_label=V1_LABEL)
+    v2 = duel_run(make_report=False, oos_path=OOS_V2, ml_label=V2_LABEL)
+    xgb = duel_run(make_report=False, oos_path=OOS_XGB, ml_label=XGB_LABEL)
+    ls = ls_run(OOS_V2)
+    result = {"v1": v1, "v2": v2, "xgb": xgb, "ls": ls, "verdict": v2["verdict"]}
     if make_report:
         result["report_path"] = str(write_report(result))
     return result
@@ -152,31 +169,153 @@ def write_report(result: dict) -> Path:
              "passing **vacuously** — it could never have detected the change it existed to "
              "detect. The fixture now makes them differ.\n")
 
+    # ------------------------------------------------------------------ arm 2
+    xgb = result.get("xgb")
     L.append("---\n")
-    L.append("## Arm 2 — XGBoost · *not yet run*\n")
-    L.append("One controlled rival on identical features/labels/protocol, answering \"is it "
-             "the library?\". AdaBoost is excluded by instruction: a superseded boosting "
-             "family whose inclusion would add a multiple-testing cost for no new information. "
-             "Ensembles only if an arm beats momentum on its own — losers are not ensembled.\n")
-    L.append("## Arm 3 — long/short research book · *not yet run*\n")
-    L.append("Decile long/short, market-neutral, same costs plus a documented borrow-cost "
-             "assumption, scored by v2. A **research sleeve** — it does not compete for the "
-             "product engine, because the retail pie stays long-only by product definition.\n")
+    if xgb:
+        x = xgb["full"][XGB_LABEL]
+        xic = xgb["full_ic"][XGB_LABEL]
+        xv = xgb["verdict"]
+        L.append("## Arm 2 — XGBoost: is it the library?\n")
+        L.append("**Answer: no.** One controlled rival on identical features, label, folds and "
+                 "embargo — `signals/xgb_ranker.py` swaps the estimator into the SAME "
+                 "`walk_forward`, so the protocol is shared code rather than a second "
+                 "implementation that would have to be trusted to match.\n")
+        L.append("Two parameters do not map cleanly across the libraries and are named rather "
+                 "than buried: `num_leaves=15` has no XGBoost equivalent (leaf-wise vs "
+                 "depth-wise growth — capacities are close at `max_depth=4`, shapes differ), "
+                 "and `min_child_samples=100` (a row count) becomes `min_child_weight=100`, "
+                 "which is not the same quantity for a ranking objective. **No tuning** — a "
+                 "hyperparameter search is out of scope by the #31 rails.\n")
+        L.append("| Book | n | Ann. return | Ann. vol | Sharpe | Sortino | MaxDD | Mean Rank IC | t |")
+        L.append("|---|---|---|---|---|---|---|---|---|")
+        L.append(_row(BOOK_A + " *(control)*", mom2, momic))
+        L.append(_row(V2_LABEL, ml2, ic2))
+        L.append(_row(XGB_LABEL, x, xic))
+        L.append("")
+        L.append(f"**Verdict: XGBoost does not earn the engine either.** Sharpe "
+                 f"{_n(x['sharpe'])} vs momentum's {_n(mom2['sharpe'])}; Rank IC consistency "
+                 f"{xv['ic_consistency']:.0%} ({len(xv['ic_years_won_by_ml'])} of "
+                 f"{xv['n_years']} years) — and it wins IC in **the same years** as the LGBM "
+                 f"models, 2023 and 2025.\n")
+        L.append(f"It is the best of the three ML books ({_n(x['sharpe'])} vs "
+                 f"{_n(ml2['sharpe'])} for v2 and {_n(ml1['sharpe'])} for v1) and carries the "
+                 f"highest Rank IC ({_n(xic['mean_ic'], 4)}) on the lowest turnover "
+                 f"({_p(xgb['turnover'][XGB_LABEL])}). It still loses to momentum by a wide "
+                 "margin, and it loses it the same way, in the same years. **The gap is the "
+                 "signal's, not the library's** — which is exactly what this arm was run to "
+                 "establish, and the claim is bounded accordingly: the same configuration in "
+                 "another library does not rescue the signal, NOT that no configuration could.\n")
+
+    # ------------------------------------------------------------------ arm 3
+    ls = result.get("ls")
+    if ls:
+        mlb = ls["books"]["ML v2"]["stats"]
+        mob = ls["books"]["Momentum"]["stats"]
+        L.append("---\n")
+        L.append("## Arm 3 — the long/short research sleeve\n")
+        L.append("**Research only.** The retail pie stays long-only by product definition "
+                 "(#30 ruling); this competes for a place on the site as a second, clearly "
+                 "labelled research track, never for the product engine.\n")
+        L.append("Construction: long the top decile, short the bottom decile, inverse-vol "
+                 "within each leg normalised to |sum| = 1 (±100% per leg, 200% gross, "
+                 "market-neutral by construction), monthly, 10 bps/side, **plus a "
+                 f"{BORROW_ANNUAL:.2%}/yr borrow charge on the short leg's gross exposure**.\n")
+
+        L.append("### First — did the monotonicity survive the A-1 fix?\n")
+        L.append("This was the check to run before building anything: if the ML's "
+                 "near-monotone decile profile had been leak-driven, the whole long/short "
+                 "case would have collapsed with it. Mean forward return by score decile "
+                 "(%/mo):\n")
+        L.append("| Score | D0 | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | Monotonicity |")
+        L.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+        for k, prof in ls["profiles"].items():
+            mono = pd.Series(prof.values).corr(pd.Series(range(10)), method="spearman")
+            L.append(f"| **{k}** | " + " | ".join(f"{v*100:+.2f}" for v in prof.values)
+                     + f" | **{mono:+.2f}** |")
+        L.append("")
+        L.append("**It survived — and strengthened.** The clean v2 model is *more* monotone "
+                 "than the contaminated v1 was (+0.98 vs +0.94). Momentum stays at +0.50 with "
+                 "its bottom decile the second-BEST of the ten: extreme 12-1 losers bounce, so "
+                 "a momentum-scored short leg shorts the wrong names. The asymmetry the "
+                 "short-sleeve proposal rested on is real and is not an artifact of A-1.\n")
+
+        L.append(f"### The book — after costs and borrow, {ls['n_rebalances']} rebalances\n")
+        L.append("| Book | Sharpe | Ann. return | Ann. vol | MaxDD | Mean Rank IC | Turnover | Hit rate |")
+        L.append("|---|---|---|---|---|---|---|---|")
+        for k, s in (("**ML v2**", mlb), ("Momentum", mob)):
+            L.append(f"| {k} | **{_n(s['sharpe'])}** | {_p(s['ann_ret'])} | {_p(s['vol'])} | "
+                     f"{_p(s['maxdd'])} | {_n(s['mean_ic'], 4)} | {_p(s['turnover'])} | "
+                     f"{s['hit']*100:.0f}% |")
+        L.append("")
+        L.append("### Borrow sensitivity — a book that works at only one rate is not a book\n")
+        L.append("| Borrow (bps/yr) | " + " | ".join(f"{int(r*10000)}" for r in
+                 ls["sensitivity"]["ML v2"]["borrow_annual"]) + " |")
+        L.append("|---|" + "---|" * len(ls["sensitivity"]["ML v2"]))
+        for k, sens in ls["sensitivity"].items():
+            L.append(f"| {k} Sharpe | " + " | ".join(f"{v:+.2f}" for v in sens["sharpe"]) + " |")
+        L.append("")
+        L.append("The ML's edge over momentum in this vehicle survives every borrow "
+                 "assumption tested, out to 500 bps — far past anything plausible for S&P 500 "
+                 "names.\n")
+
+        L.append("### What this does and does NOT show\n")
+        L.append(f"**Does:** in its natural vehicle the ML beats momentum decisively — Sharpe "
+                 f"**{_n(mlb['sharpe'])} vs {_n(mob['sharpe'])}** — the mirror image of the "
+                 f"long-only result, and with the clean model. \"Mis-deployed, not useless\" "
+                 "is now measured twice, on both sides of the vehicle.\n")
+        L.append(f"**Does NOT:** beat the product's own engine. Momentum's LONG-ONLY book "
+                 f"scores {_n(mom2['sharpe'])} — higher than this long/short book's "
+                 f"{_n(mlb['sharpe'])}, at a third of the drawdown "
+                 f"({_p(mom2['maxdd'])} vs {_p(mlb['maxdd'])}) and without shorting anything. "
+                 "The research sleeve is better than momentum *in that vehicle*; it is not "
+                 "better than what the product already ships.\n")
+        L.append("**Survivorship cuts hardest here.** Every decile has a positive mean return, "
+                 "including D0 — the signature of a current-constituents universe over a bull "
+                 "window. The short leg loses money outright and pays only relatively. The "
+                 "names that would have been the best shorts collapsed and left the index, so "
+                 "they are absent entirely. A market-neutral book returning "
+                 f"{_p(mlb['ann_ret'])} a year on this data should be read as a "
+                 "characterisation of a biased sample, not as an achievable return.\n")
+        L.append("**Borrow is an assumption, not a measurement.** Real borrow is per-name, "
+                 "time-varying, and worst exactly where a short signal is strongest.\n")
 
     L.append("---\n")
-    L.append("## Closure statement · *pending arms 2 and 3*\n")
-    L.append(f"Arm 1 verdict: **momentum keeps the engine.** The clean v2 model loses on "
-             f"after-cost Sharpe ({_n(ml2['sharpe'])} vs {_n(mom2['sharpe'])}) and fails the "
-             f"consistency clause ({ver['ic_consistency']:.0%} of years). Under the "
-             "pre-stated criterion that is not a marginal result to be revisited — it is the "
-             "answer the criterion was written to produce.\n")
+    L.append("---\n")
+    L.append("## Closure statement\n")
+    if result.get("xgb") and result.get("ls"):
+        L.append("**The product engine is 12-1 momentum. The question is closed.**\n")
+        L.append("Three arms, all pre-registered, all published win or lose:\n")
+        L.append(f"1. **Clean the model** — A-1 fixed. Moved Sharpe by +0.041 and Rank IC by "
+                 f"−0.0013. The contamination was never carrying the ML.")
+        L.append(f"2. **Change the library** — XGBoost. Best of the three ML books and still "
+                 f"{_n(mom2['sharpe'] - result['xgb']['full'][XGB_LABEL]['sharpe'])} Sharpe "
+                 f"behind momentum, losing in the same years. The gap is the signal's.")
+        L.append(f"3. **Change the vehicle** — long/short. Here the ML wins decisively "
+                 f"({_n(ls['books']['ML v2']['stats']['sharpe'])} vs "
+                 f"{_n(ls['books']['Momentum']['stats']['sharpe'])}) — but this arm never "
+                 "competed for the engine, and the book it produces is still worse than the "
+                 "long-only momentum product on both Sharpe and drawdown.\n")
+        L.append("**The ML's role, stated plainly:** it is a better ranker of the whole "
+                 "cross-section than momentum is — Rank IC says so in every arm — and that "
+                 "skill has no home in a 20-name long-only retail pie. It remains the "
+                 "research instrument, the shipped historical record, and the natural score "
+                 "for a long/short research track if one is ever published. It does not drive "
+                 "the product.\n")
+        L.append("Nothing here was decided after seeing a number. The criterion was fixed "
+                 "before the first arm ran, applied as arithmetic, and it produced the same "
+                 "answer three times from three different directions.\n")
+    else:
+        L.append(f"Arm 1 verdict: **momentum keeps the engine.** The clean v2 model loses on "
+                 f"after-cost Sharpe ({_n(ml2['sharpe'])} vs {_n(mom2['sharpe'])}) and fails "
+                 f"the consistency clause ({ver['ic_consistency']:.0%} of years).\n")
 
     REPORT_PATH.write_text("\n".join(L))
     return REPORT_PATH
 
 
 def main():
-    res = arm1(make_report=True)
+    res = run_all(make_report=True)
     v = res["verdict"]
     print(f"Arm 1 — earns the engine: {v['ml_earns_keep']}")
     print(f"  {v['headline']}")
