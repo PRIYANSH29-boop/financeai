@@ -39,12 +39,17 @@ def panel(tickers=("AAA",), n=N, seed=0, start="2020-01-01"):
     """A synthetic daily panel with the columns the builders actually read."""
     rng = np.random.default_rng(seed)
     dates = pd.bdate_range(start, periods=n)
+    # `close` and `adj_close` must DIFFER, or any test meant to tell them apart passes
+    # vacuously. (They were identical here until #31 Arm 1, which is exactly how one A-1
+    # tripwire stayed green through the fix it was built to detect.) The factor rises to 1.0
+    # at the right edge, mimicking a real adjusted series: history is marked down, today is not.
+    adj = np.linspace(0.85, 1.0, n)
     rows = []
     for i, tk in enumerate(tickers):
         px = 100.0 * np.cumprod(1 + rng.normal(0.0004, 0.01, n)) + i
-        for d, p in zip(dates, px):
+        for d, p, f in zip(dates, px, adj):
             rows.append({"date": d, "ticker": tk, "open": p, "high": p * 1.01,
-                         "low": p * 0.99, "close": p, "adj_close": p,
+                         "low": p * 0.99, "close": p, "adj_close": p * f,
                          "volume": 1_000_000 + i})
     return pd.DataFrame(rows)
 
@@ -246,41 +251,58 @@ def test_sanity_gate_aborts_on_bad_data(break_it, why):
     assert ei.value.code != 0, f"gate must exit non-zero on {why}"
 
 
-# ====================================================================== known defect
-def test_size_is_a_bare_price_level():
-    """⚠️ This test pins a KNOWN DEFECT, not a guarantee — #25 finding A-1, still open.
+# ============================================================ A-1: FIXED in #31 Arm 1
+def test_size_is_the_raw_traded_price_not_the_adjusted_one():
+    """A-1 is CLOSED. `size` is `log(close)` — the price that actually traded that day.
 
-    `size` is `log(adj_close)`: a price LEVEL, not a size. Two problems. (a) A $500 stock is
-    not "bigger" than a $50 one — this measures price, not market cap. (b) `adj_close` is
-    retroactively re-adjusted for every later split and dividend, so the value at date t
-    changes whenever a corporate action happens AFTER t. Momentum features are immune (the
-    adjustment factor cancels in a price ratio); a bare level does not cancel, so the
-    cross-sectional rank of `size` on a historical date depends on the future.
+    It was `log(adj_close)`, a retroactively re-written series: the value at date t changed
+    whenever a split or dividend landed AFTER t, so the cross-sectional rank of `size` on a
+    historical date depended on the future. Momentum was immune (the adjustment factor
+    cancels in a price ratio); a bare level did not cancel.
 
-    The reviewer's ruling (#28) is that A-1 is fixed in a separate phase with a clearly
-    labelled new frozen model, because changing this feature changes the frozen model's
-    scores. Until then it is a contaminant we know about and have written down.
+    The fixture's `close` and `adj_close` deliberately differ, so this test discriminates.
+    They were identical until #31 — which is exactly how the other tripwire in this pair
+    stayed green through the very change it existed to catch.
 
-    **If this test fails, A-1 has been fixed** — update it to assert the new definition and
-    retire the contaminant note from ARCHITECTURE.md and AUDIT_FINDINGS.md.
+    Still true and still documented: raw close is a price LEVEL, not a size. A $500 stock is
+    not "bigger" than a $50 one, and a name that splits drops in this ranking overnight
+    without changing. "Should `size` be market cap?" is a different experiment (#31 rails).
     """
     df = panel()
     out = feats(df)
-    assert out.loc["AAA", "size"].iloc[100] == pytest.approx(
-        np.log(df["adj_close"].iloc[100]), rel=1e-12)
+    got = out.loc["AAA", "size"].iloc[100]
+    assert got == pytest.approx(np.log(df["close"].iloc[100]), rel=1e-12)
+    assert got != pytest.approx(np.log(df["adj_close"].iloc[100]), rel=1e-9), \
+        "size must no longer read the retroactively adjusted series"
 
 
-def test_size_moves_when_history_is_retro_adjusted():
-    """Demonstrates A-1's consequence rather than describing it: a 10-for-1 split applied to
-    the whole history (which is what a price provider does) changes `size` at EVERY past
-    date, while momentum is unaffected."""
+def test_size_no_longer_moves_when_history_is_retro_adjusted():
+    """The fix, demonstrated rather than described — the inverse of the test it replaces.
+
+    A 10-for-1 split re-adjusts the WHOLE adj_close history, which is what a price provider
+    does. Every feature must now be unmoved: momentum because ratios cancel the factor, and
+    `size` because it no longer reads that series at all.
+    """
     base = panel()
     split = base.copy()
     split["adj_close"] = split["adj_close"] / 10.0        # retroactive re-adjustment
 
     a, b = feats(base), feats(split)
     t = 300
-    assert a["size"].iloc[t] != pytest.approx(b["size"].iloc[t]), "size should have moved"
+    assert a["size"].iloc[t] == pytest.approx(b["size"].iloc[t], rel=1e-12), \
+        "A-1 has regressed: size moved when only the adjusted series was rewritten"
     for c in ("mom_3m", "mom_6m", "mom_12_1m", "reversal_1m"):
         assert a[c].iloc[t] == pytest.approx(b[c].iloc[t], rel=1e-12), \
             f"{c} is a ratio and must be immune to re-adjustment"
+
+
+def test_a_real_split_in_the_raw_series_does_move_size():
+    """The other side of the fix: `size` must still RESPOND to the raw price actually
+    changing. A test that only asserts immobility would also pass if `size` were a constant.
+    """
+    base = panel()
+    real = base.copy()
+    real["close"] = real["close"] / 10.0                  # the traded price itself changed
+
+    a, b = feats(base), feats(real)
+    assert a["size"].iloc[300] != pytest.approx(b["size"].iloc[300], rel=1e-9)

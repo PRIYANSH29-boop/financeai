@@ -123,7 +123,20 @@ def build_raw_features(df: pd.DataFrame):
     vol_avg_20 = g["volume"].transform(lambda s: s.rolling(20).mean())
     df["liquidity"] = df["volume"] / vol_avg_20
 
-    df["size"] = np.log(ac)
+    # #31 Arm 1 — the A-1 fix. This was `np.log(ac)` on ADJUSTED close, which is a
+    # retroactively re-written series: the value at date t changes whenever a split or
+    # dividend lands AFTER t, so the cross-sectional rank of `size` on a historical date
+    # depended on the future. Momentum features are immune (the adjustment factor cancels in
+    # a price ratio); a bare level does not cancel.
+    #
+    # Raw `close` is the price that actually traded that day and is never rewritten, so the
+    # leak is closed. Chosen over point-in-time market cap deliberately: it keeps v2 a
+    # ONE-VARIABLE change from v1, which is what makes the rematch attributable. Documented
+    # caveat that survives this fix: raw close is still a price LEVEL, not a size — a $500
+    # stock is not "bigger" than a $50 one, and a name that splits drops in this ranking
+    # overnight without changing. "Should `size` be market cap?" is a real question and a
+    # DIFFERENT experiment, needing its own multiple-testing accounting (#31 rails).
+    df["size"] = np.log(df["close"])
 
     # B. Point-in-time eligibility: >=253 trading days of history on/before t.
     # cumcount() is 0-based, so position-on/before-t = cumcount()+1; eligible when >=253,

@@ -25,10 +25,14 @@ out-of-sample** — predicted by a model fit only on data before that date, with
 embargo. Scoring the frozen model over its own training window would hand book B an
 in-sample advantage and make the duel meaningless.
 
-The A-1 contamination, and why it makes the result ASYMMETRIC
-------------------------------------------------------------
-`size` (a model feature) is `log(adj_close)` — a bare, retroactively re-adjusted price level
-(#25 finding A-1, still open). Its historical value moves whenever a later split or dividend
+The A-1 contamination, and why it made the v1 result ASYMMETRIC
+--------------------------------------------------------------
+**A-1 is now FIXED (#31 Arm 1) and the v2 rematch showed it was never carrying the ML — the
+clean model scores Sharpe 1.448 vs the contaminated 1.407, still far behind momentum's 1.792.
+The section below describes the v1 duel, whose published numbers remain as run.**
+
+At the time of the v1 duel, `size` (a model feature) was `log(adj_close)` — a bare,
+retroactively re-adjusted price level (#25 finding A-1). Its historical value moves whenever a later split or dividend
 lands, so it leaks a little future information **into book B only**. Momentum is a price
 *ratio*: the adjustment factor cancels, so book A is immune. `test_utils_pipeline_f2.py`
 proves both halves of that claim.
@@ -38,7 +42,8 @@ The contamination therefore FAVOURS THE ML. The reviewer's pre-stated reading (#
     ML loses  ⇒ CONCLUSIVE. It lost while carrying an advantage. Trade momentum.
     ML wins   ⇒ INCONCLUSIVE, pending a clean A-1-fixed retrain. The win may be the leak.
 
-A clean retrain is a separate future phase. This module does not fix A-1 and must not.
+A clean retrain was a separate phase — #31 Arm 1 — and it has now been run. See
+`figures/lab/last_stand.md`.
 """
 
 from __future__ import annotations
@@ -128,14 +133,18 @@ def score_series(rets: pd.Series) -> dict:
 
 
 # ------------------------------------------------------------------ the duel
-def run(make_report: bool = True) -> dict:
-    df = load_oos()
+def run(make_report: bool = True, oos_path: Path = OOS_PATH,
+        ml_label: str = BOOK_B, report_path: Path = REPORT_PATH) -> dict:
+    """#31 Arm 1 added the parameters so the SAME harness can rematch a different model
+    version. Defaults reproduce the #30 duel exactly, so the published result is unchanged."""
+    df = load_oos(oos_path)
+    scores = {BOOK_A: momentum_score, ml_label: ml_score}
     panel = pd.read_parquet(PANEL_PATH)
     panel["date"] = pd.to_datetime(panel["date"])
     rebals = monthly_rebalances(df)
 
     books, frames = {}, {}
-    for name, fn in SCORES.items():
+    for name, fn in scores.items():
         pf = run_strategy({"name": name, "factors": [("mom_12_1m", True)],
                            "combine": "rank_avg", "long_only": True, "rebalance": "monthly"},
                           labeled=df, panel=panel, score_fn=fn, rebalances=rebals)
@@ -143,7 +152,7 @@ def run(make_report: bool = True) -> dict:
         frames[name] = pf
         books[name] = pd.Series(pf["net_ret"].to_numpy(), index=pd.DatetimeIndex(pf["date"]))
 
-    ics = {name: rank_ic(df, fn, rebals) for name, fn in SCORES.items()}
+    ics = {name: rank_ic(df, fn, rebals) for name, fn in scores.items()}
 
     # The benchmark and the regime calendar both come from the equal-weight universe series
     # the same run produced, so every book is sliced on identical dates.
@@ -153,7 +162,7 @@ def run(make_report: bool = True) -> dict:
 
     full = {name: score_series(s) for name, s in books.items()}
     full_ic = {name: ic_summary(ic) for name, ic in ics.items()}
-    turnover = {name: float(frames[name]["turnover"].mean()) for name in SCORES}
+    turnover = {name: float(frames[name]["turnover"].mean()) for name in scores}
 
     years = sorted({d.year for d in books[BOOK_A].index})
     per_year = {}
@@ -161,7 +170,7 @@ def run(make_report: bool = True) -> dict:
         per_year[y] = {
             name: {**score_series(books[name][books[name].index.year == y]),
                    **ic_summary(ics[name][ics[name].index.year == y])}
-            for name in SCORES
+            for name in scores
         }
 
     per_regime = {}
@@ -170,10 +179,10 @@ def run(make_report: bool = True) -> dict:
         per_regime[reg] = {
             name: {**score_series(books[name][mask.to_numpy()]),
                    **ic_summary(ics[name].reindex(books[name].index)[mask.to_numpy()])}
-            for name in SCORES
+            for name in scores
         }
 
-    verdict = decide(full, full_ic, per_year)
+    verdict = decide(full, full_ic, per_year, ml_label=ml_label)
     result = {
         "window": f"{books[BOOK_A].index.min().date()} → {books[BOOK_A].index.max().date()}",
         "n_months": int(len(books[BOOK_A])),
@@ -181,21 +190,24 @@ def run(make_report: bool = True) -> dict:
         "per_year": per_year, "per_regime": per_regime,
         "regime_counts": regimes.value_counts().to_dict(),
         "verdict": verdict,
+        "books": list(scores),
+        "ml_label": ml_label,
+        "oos_path": str(oos_path),
     }
     if make_report:
-        result["report_path"] = str(write_report(result))
+        result["report_path"] = str(write_report(result, report_path))
     return result
 
 
-def decide(full: dict, full_ic: dict, per_year: dict) -> dict:
+def decide(full: dict, full_ic: dict, per_year: dict, ml_label: str = BOOK_B) -> dict:
     """Apply the PRE-STATED rule (#27 §3) + the #28 asymmetric ruling. No judgement here —
     the thresholds were fixed before the numbers existed, and this is arithmetic on them."""
-    a_sh, b_sh = full[BOOK_A]["sharpe"], full[BOOK_B]["sharpe"]
+    a_sh, b_sh = full[BOOK_A]["sharpe"], full[ml_label]["sharpe"]
     ml_wins_sharpe = bool(b_sh > a_sh)
 
     years = sorted(per_year)
     ml_ic_wins = [y for y in years
-                  if (per_year[y][BOOK_B]["mean_ic"] or 0) > (per_year[y][BOOK_A]["mean_ic"] or 0)]
+                  if (per_year[y][ml_label]["mean_ic"] or 0) > (per_year[y][BOOK_A]["mean_ic"] or 0)]
     consistency = len(ml_ic_wins) / len(years) if years else 0.0
     ic_consistent = bool(consistency > MIN_CONSISTENCY)
 
@@ -234,8 +246,8 @@ def _row(name, s, ic=None):
     return "| " + " | ".join(cells) + " |"
 
 
-def write_report(result: dict) -> Path:
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
+def write_report(result: dict, report_path: Path = REPORT_PATH) -> Path:
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     v = result["verdict"]
     L = []
     L.append("# The Signal Duel — frozen ML vs plain 12-1 momentum (#27, run under #30)\n")
@@ -284,13 +296,13 @@ def write_report(result: dict) -> Path:
     L.append("## Full window\n")
     L.append("| Book | n | Ann. return | Ann. vol | Sharpe | Sortino | MaxDD | Mean Rank IC | t |")
     L.append("|---|---|---|---|---|---|---|---|---|")
-    for name in SCORES:
+    for name in result.get("books", list(SCORES)):
         L.append(_row(name, result["full"][name], result["full_ic"][name]))
     L.append("")
     L.append("### Turnover (costs decide real-world winners)\n")
     L.append("| Book | Mean monthly turnover |")
     L.append("|---|---|")
-    for name in SCORES:
+    for name in result.get("books", list(SCORES)):
         L.append(f"| {name} | {_p(result['turnover'][name])} |")
     L.append("")
 
@@ -301,7 +313,7 @@ def write_report(result: dict) -> Path:
     L.append("| Year | Book | n | Ann. return | Ann. vol | Sharpe | Sortino | MaxDD | Mean Rank IC | t |")
     L.append("|---|---|---|---|---|---|---|---|---|---|")
     for y in sorted(result["per_year"]):
-        for name in SCORES:
+        for name in result.get("books", list(SCORES)):
             s = result["per_year"][y][name]
             L.append(f"| {y} " + _row(name, s, s)[1:])
     L.append("")
@@ -315,7 +327,7 @@ def write_report(result: dict) -> Path:
     L.append("| Regime | Book | n | Ann. return | Ann. vol | Sharpe | Sortino | MaxDD | Mean Rank IC | t |")
     L.append("|---|---|---|---|---|---|---|---|---|---|")
     for reg in ("calm", "normal", "stressed"):
-        for name in SCORES:
+        for name in result.get("books", list(SCORES)):
             s = result["per_regime"][reg][name]
             L.append(f"| {reg} " + _row(name, s, s)[1:])
     L.append("")
@@ -332,8 +344,9 @@ def write_report(result: dict) -> Path:
     L.append(f"**Strength of the finding:** {v['strength']}\n")
 
     # The one result that could be read the other way, named rather than buried.
+    _ml = result.get("ml_label", BOOK_B)
     a_ic = result["full_ic"][BOOK_A]["mean_ic"]
-    b_ic = result["full_ic"][BOOK_B]["mean_ic"]
+    b_ic = result["full_ic"][_ml]["mean_ic"]
     if b_ic > a_ic and not v["ml_wins_sharpe"]:
         L.append("## The tension worth naming — Sharpe and Rank IC disagree\n")
         L.append(f"Over the full window the ML has the **higher mean Rank IC** "
@@ -353,7 +366,7 @@ def write_report(result: dict) -> Path:
                  "numbers existed.\n")
         L.append("Two further observations, neither of which changes the verdict:\n")
         L.append(f"* **The ML is not losing on costs.** It turns over "
-                 f"{_p(result['turnover'][BOOK_B])} a month against momentum's "
+                 f"{_p(result['turnover'][_ml])} a month against momentum's "
                  f"{_p(result['turnover'][BOOK_A])} — it is the *cheaper* book to run and "
                  "still ends with the lower after-cost Sharpe. The gap is selection, not "
                  "friction.\n")
@@ -397,15 +410,15 @@ def write_report(result: dict) -> Path:
     L.append("* **A-1 is not fixed here**, deliberately. Fixing it changes the frozen model's "
              "scores and needs its own clearly-labelled retrain — a separate phase.\n")
 
-    REPORT_PATH.write_text("\n".join(L))
-    return REPORT_PATH
+    report_path.write_text("\n".join(L))
+    return report_path
 
 
 def main():
     res = run(make_report=True)
     v = res["verdict"]
     print(f"window {res['window']} ({res['n_months']} mo)")
-    for name in SCORES:
+    for name in res["books"]:
         s, ic = res["full"][name], res["full_ic"][name]
         print(f"  {name:22s} sharpe {s['sharpe']:+.3f} | sortino {s['sortino']:+.3f} | "
               f"maxDD {s['maxdd']*100:6.2f}% | IC {ic['mean_ic']:+.4f} (t={ic['t_stat']:+.2f}) | "

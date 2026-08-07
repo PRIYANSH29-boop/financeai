@@ -18,7 +18,11 @@ portfolio/ scripts/ audit/` returns 84 hits, of which ~50 are `str.join` false p
 but is where features and labels are actually built** — the highest-leakage-risk code in the
 repo — so I swept it too.
 
-### A-1 — S1 — `utils/sp500_features.py:126`
+### A-1 — S1 — `utils/sp500_features.py` — **CLOSED in #31 Arm 1**
+*Fixed: `size` is now `log(close)`, the price that actually traded, never retro-adjusted. The
+v2 rematch showed the contamination was immaterial to the ML's performance — see
+`figures/lab/last_stand.md`. Original finding preserved below.*
+
 **Lens:** period vs publication basis. **Suspicion:** `df["size"] = np.log(ac)` is `log(adj_close)`
 — (a) that is price level, not size (a $500 stock is not "bigger" than a $50 one), and (b)
 `adj_close` is *retroactively* re-adjusted for every later split and dividend, so the value at

@@ -146,3 +146,27 @@ def test_the_report_states_the_rule_and_the_asymmetry():
     assert "CONCLUSIVE" in t and "INCONCLUSIVE" in t
     assert "EDUCATIONAL SIMULATION" in t
     assert "urvivorship" in t
+
+
+# ============================================================ #31 Arm 1 — the v2 rematch
+
+@pytest.mark.skipif(not Path("data/sp500_oos_walkforward_v2.parquet").exists(),
+                    reason="v2 OOS parquet is a gitignored build artifact")
+def test_the_harness_can_score_a_different_model_version():
+    """Arm 1's whole method: the SAME duel harness, a different model, so the rematch is
+    comparable to the original by construction rather than by re-implementation."""
+    res = sd.run(make_report=False, oos_path=Path("data/sp500_oos_walkforward_v2.parquet"),
+                 ml_label="B · v2")
+    assert res["ml_label"] == "B · v2"
+    assert set(res["books"]) == {sd.BOOK_A, "B · v2"}
+    assert res["n_months"] > 40
+
+
+def test_the_defaults_still_reproduce_the_published_duel():
+    """Parameterising run() must not have moved the #30 result. The momentum control is the
+    same series either way, so its Sharpe is the tell."""
+    import inspect
+    sig = inspect.signature(sd.run)
+    assert sig.parameters["oos_path"].default == sd.OOS_PATH
+    assert sig.parameters["ml_label"].default == sd.BOOK_B
+    assert sig.parameters["report_path"].default == sd.REPORT_PATH

@@ -79,7 +79,8 @@ Builds the three artifacts everything else consumes. Rebuilt with `make pipeline
 **Make:** `make panel` · `make features` · `make labels` · `make pipeline` (all three, in order).
 **Tests:** `test/test_utils_pipeline_f2.py` — 24 tests pinning the *leakage geometry*
 (backward-only, per-ticker, within-date, exactly one deliberate 21-day forward look), plus the
-sanity gate and two tests that pin the known A-1 contaminant. Every assertion is
+sanity gate and three that pin the A-1 fix (#31 Arm 1: `size` is the raw traded price,
+never the retro-adjusted one). Every assertion is
 mutation-verified: the builders were deliberately broken five ways and each break was caught.
 
 ### `signals/` — phases 4–6, the model and its honest evaluation
