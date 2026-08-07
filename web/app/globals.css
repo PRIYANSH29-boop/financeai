@@ -1,3 +1,6 @@
+@import "../styles/tokens.css";
+@import "../styles/ui.css";
+
 /*
   RankAlpha web — design tokens.
 
@@ -7,33 +10,46 @@
       returns, the maxDD tile. A drift delta is NOT a loss, so it uses --num-neutral.
     * numbers are monospace everywhere, so columns of figures line up and digits do not
       jitter as the slider moves.
+
+  #32 WP2 — THE DARK FLIP. The v1 token NAMES below are unchanged; their VALUES now point
+  at the v3 palette from styles/tokens.css. That is the whole conversion: every v1 class
+  (.card, .tile, .chip, the Explore table, the Basket picker) keeps its name, its layout
+  and its markup, and simply renders dark.
+
+  Doing it here rather than per-component is deliberate. WP2's scope is the pie page, but
+  the pie is one tab of three — converting only that tab would have shipped a dark pie
+  next to a light Explore and a light Basket, which is worse than either. One block of
+  values keeps the whole app coherent, and leaves WP4's polish pass exactly where it was.
 */
 
 :root {
-  --bg: #fbfbfc;
-  --surface: #ffffff;
-  --surface-2: #f4f5f7;
-  --border: #e3e5e9;
-  --border-strong: #cfd3da;
+  --bg: #0a0d12;
+  --surface: #12171f;
+  --surface-2: #181e28;
+  --surface-3: #212936;
+  --border: #232b37;
+  --border-strong: #36414f;
 
-  --text: #16181d;
-  --text-muted: #5c6270;
-  --text-faint: #878d9a;
+  --text: #e7ecf3;
+  --text-muted: #9ba6b6;
+  --text-faint: #8592a3;
 
-  --accent: #0d8b80;
-  --accent-hover: #0a6f66;
-  --accent-soft: #e6f4f2;
+  --accent: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-soft: rgba(45, 212, 191, 0.12);
+  --accent-line: rgba(45, 212, 191, 0.38);
 
   /* Red is a semantic, not a palette entry. Losses and warnings only. */
-  --loss: #c0392f;
-  --loss-soft: #fdeceb;
+  --loss: #ff6b6b;
+  --loss-soft: rgba(255, 107, 107, 0.12);
+  --loss-line: rgba(255, 107, 107, 0.38);
 
-  --cash: #b4bac5;        /* the cash slice — deliberately muted, still first-class */
-  --num-neutral: #454b57; /* drift deltas: informational, never alarming */
+  --cash: #69778a;        /* the cash slice — deliberately quiet, still first-class */
+  --num-neutral: #c3cbd8; /* drift deltas: informational, never alarming */
 
   --radius: 10px;
   --radius-sm: 6px;
-  --shadow: 0 1px 2px rgba(16, 18, 23, 0.05), 0 4px 14px rgba(16, 18, 23, 0.04);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
@@ -153,7 +169,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer;
 .info .bubble {
   position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
   width: 230px; padding: 9px 11px; z-index: 20;
-  background: var(--text); color: #fff; border-radius: var(--radius-sm);
+  background: var(--surface-3); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
   font-size: 0.8rem; line-height: 1.45; box-shadow: var(--shadow);
 }
 
@@ -219,7 +236,7 @@ details.expander > .body { padding: 0 20px 20px; }
 .tile .v { font-family: var(--mono); font-size: 1.3rem; font-weight: 620; margin-top: 2px; }
 .tile .sub { font-size: 0.74rem; color: var(--text-muted); margin-top: 3px; }
 
-.caveats { background: var(--loss-soft); border: 1px solid #f3cdc9; border-radius: var(--radius-sm); padding: 13px 16px; }
+.caveats { background: var(--loss-soft); border: 1px solid var(--loss-line); border-radius: var(--radius-sm); padding: 13px 16px; }
 .caveats ul { margin: 6px 0 0; padding-left: 18px; }
 .caveats li { margin-bottom: 4px; font-size: 0.86rem; }
 
@@ -228,10 +245,10 @@ details.expander > .body { padding: 0 20px 20px; }
 
 /* ---------------------------------------------------------------- modal */
 .modal-backdrop {
-  position: fixed; inset: 0; background: rgba(16, 18, 23, 0.45);
+  position: fixed; inset: 0; background: rgba(6, 9, 13, 0.72);
   display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 50;
 }
-.modal { background: var(--surface); border-radius: var(--radius); max-width: 520px; width: 100%; padding: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
+.modal { background: var(--surface); border-radius: var(--radius); max-width: 520px; width: 100%; padding: 24px; box-shadow: 0 12px 44px rgba(0,0,0,0.55); }
 .modal ol { padding-left: 20px; margin: 14px 0; }
 .modal ol li { margin-bottom: 9px; }
 
@@ -269,8 +286,8 @@ details.expander > .body { padding: 0 20px 20px; }
 .beta-badge.accent .v { color: var(--accent); }
 
 /* --- donut slice labels + legend (Module C) --- */
-.slice-label { font-family: var(--mono); font-size: 11px; font-weight: 640; fill: #fff; pointer-events: none; }
-.slice-label-pct { font-size: 9.5px; font-weight: 500; fill: rgba(255,255,255,0.9); }
+.slice-label { font-family: var(--mono); font-size: 11px; font-weight: 640; pointer-events: none; }
+.slice-label-pct { font-size: 9.5px; font-weight: 500; fill-opacity: 0.82; }
 .pie-legend { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 4px 12px; }
 .pie-legend li { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.8rem; padding: 1px 0; }
 .pie-legend li.dim { opacity: 0.4; }
@@ -319,4 +336,58 @@ details.expander > .body { padding: 0 20px 20px; }
 @media (max-width: 620px) {
   .movers-grid, .range-row { grid-template-columns: 1fr; }
   .pie-head { flex-direction: column; align-items: flex-start; }
+}
+
+/* ================================================================ #32 WP2 — hero + pie */
+
+/* The page leads with the RESULT. This band states what was built before the controls
+   ask for anything; the controls sit directly beneath it, not above it. */
+.hero {
+  border-bottom: 1px solid var(--border);
+  background:
+    radial-gradient(1100px 340px at 12% -40%, var(--accent-soft), transparent 70%),
+    var(--surface);
+  padding: 34px 0 26px;
+  margin-bottom: 20px;
+}
+.hero-head { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+.hero-eyebrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; }
+.hero-title {
+  margin: 14px 0 0; font-size: 2.1rem; line-height: 1.15; letter-spacing: -0.025em;
+  font-weight: 640; max-width: 22ch;
+}
+.hero-title strong { color: var(--accent); font-weight: 640; }
+.hero-sub { margin: 12px 0 0; color: var(--text-muted); max-width: 62ch; font-size: 0.95rem; }
+
+.hero-stats {
+  max-width: 1180px; margin: 26px auto 0; padding: 0 20px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px;
+}
+.hero-stat { border-left: 2px solid var(--border); padding-left: 14px; }
+.hero-stat-k { font-size: 0.76rem; color: var(--text-muted); }
+.hero-stat-v { font-size: 1.7rem; font-weight: 640; line-height: 1.15; margin-top: 3px; }
+.hero-stat-sub { font-size: 0.74rem; color: var(--text-faint); margin-top: 2px; }
+.hero-note { max-width: 1180px; margin: 18px auto 0; padding: 0 20px; font-size: 0.86rem; }
+
+/* --- donut: the click affordance --- */
+.donut .slice {
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.donut .slice:hover { filter: brightness(1.08); }
+.donut .why-hint { animation: ra-fade 120ms ease both; }
+
+/* --- legend: now the holdings list, so it carries the money column --- */
+.pie-legend { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.pie-legend li { gap: 8px; padding: 3px 4px; border-radius: var(--radius-sm); }
+.pie-legend li:hover { background: var(--surface-2); }
+.pie-legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.pie-legend .leg-wt { margin-left: auto; color: var(--text); font-size: 0.78rem; }
+.pie-legend .leg-amt { color: var(--text-faint); font-size: 0.74rem; min-width: 4.5rem; text-align: right; }
+
+@media (max-width: 700px) {
+  .hero { padding: 24px 0 20px; }
+  .hero-title { font-size: 1.55rem; max-width: none; }
+  .hero-stats { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 12px; }
+  .hero-stat-v { font-size: 1.35rem; }
 }

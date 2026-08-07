@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Donut from "./Donut";
-import { beta as fmtBeta } from "../lib/format";
+import PieHero from "./PieHero";
 import {
   ControlBar, WhyHolding, DriftPanel, HonestyPanel,
 } from "./Panels";
@@ -67,8 +67,13 @@ export default function PieApp({ index, initialPie }) {
   const asOf = useMemo(() => pie.as_of, [pie]);
 
   return (
-    <main className="wrap">
-        <div className="stack" style={{ paddingTop: 22 }}>
+    <main>
+      {/* The result first. The controls that produced it come immediately after, so the
+          page opens with an answer rather than a form. */}
+      <PieHero index={index} pie={pie} capital={capital} />
+
+      <div className="wrap">
+        <div className="stack">
           <ControlBar index={index} capital={capital} setCapital={setCapital}
                       target={target} setTarget={setTarget} pie={pie} />
 
@@ -80,18 +85,13 @@ export default function PieApp({ index, initialPie }) {
 
           <div className="main-grid">
             <div className="card">
+              {/* The beta badges that used to sit here now lead the hero, so they are not
+                  repeated. What this header adds instead is what the chart is FOR. */}
               <div className="pie-head">
                 <h2 style={{ margin: 0 }}>Your pie</h2>
-                <div className="beta-badges" aria-label="Portfolio beta">
-                  <span className="beta-badge">
-                    <span className="k">target β</span>
-                    <span className="v num">{fmtBeta(pie.target_beta)}</span>
-                  </span>
-                  <span className="beta-badge accent">
-                    <span className="k">realised β</span>
-                    <span className="v num">{fmtBeta(pie.achieved_beta)}</span>
-                  </span>
-                </div>
+                <span className="faint" style={{ fontSize: "0.8rem" }}>
+                  Click a slice to see why it&apos;s held
+                </span>
               </div>
               <Donut holdings={pie.holdings} cashWeight={pie.cash_weight}
                      capital={capital} currency={index.currency}
@@ -110,6 +110,7 @@ export default function PieApp({ index, initialPie }) {
             Pie built from data as of {asOf}. Benchmark: {index.benchmark.label}.
           </p>
         </div>
+      </div>
     </main>
   );
 }
