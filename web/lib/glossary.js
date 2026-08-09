@@ -173,6 +173,18 @@ export const PARTIAL_MONTH_DETAIL =
   "exist, and every statistic on the page — volatility, beta, Sharpe, drawdown — includes " +
   "it. A short final month is noisier than a full one.";
 
+/**
+ * The other half of the #30-B ruling: a final bucket below the ten-day floor is dropped
+ * rather than annualised, and the reader is owed a different explanation from the one that
+ * applies when a short month is kept.
+ */
+export const DROPPED_MONTH_DETAIL =
+  "Monthly figures are built by taking the last price in each month. A final month with " +
+  "only a handful of trading days is not a month — annualising its volatility, or fitting " +
+  "a beta to it, produces something shaped like a statistic with none of the content. " +
+  "Below ten trading days the bucket is left out entirely, so the figures here end at the " +
+  "last complete month even though the underlying data runs later.";
+
 /** The expansion for a caveat line, or null when none is written for it. */
 export function caveatDetail(text) {
   if (typeof text !== "string") return null;

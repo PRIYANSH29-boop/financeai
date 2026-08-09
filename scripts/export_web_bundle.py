@@ -355,12 +355,41 @@ def validate_partial_month(label: str, d: dict) -> list[str]:
     #24 shipped the boolean with nothing to render, and it stayed invisible for a release.
     Requiring the text at export time means the flag cannot be raised silently again.
     """
+    errs = []
+    action = d.get("axis_last_month_action")
+    days = d.get("axis_last_month_days")
+
+    # #30-B: a bucket short enough to be dropped must never survive as a kept partial. This
+    # is the enforcement half of the min-day rule — without it the rule is a convention, and
+    # a future call site that forgets apply_min_day_rule would ship annualised one-day stats
+    # exactly as before.
+    if action == "dropped":
+        if not isinstance(days, int) or not 0 < days < MIN_FINAL_MONTH_DAYS:
+            errs.append(f"{label}: final month was dropped but axis_last_month_days={days!r} "
+                        f"is not below the {MIN_FINAL_MONTH_DAYS}-day floor")
+        if d.get("axis_last_month_partial"):
+            errs.append(f"{label}: final month was dropped, so the surviving axis ends on a "
+                        f"complete month — axis_last_month_partial must be false")
+        text = d.get("axis_last_month_text")
+        if not text or "excluded" not in str(text).lower():
+            errs.append(f"{label}: final month was dropped but carries no renderable "
+                        f"axis_last_month_text saying so ({text!r})")
+        return errs
+
     if not d.get("axis_last_month_partial"):
         return []
-    errs = []
-    days = d.get("axis_last_month_days")
+
     if not isinstance(days, int) or days <= 0:
         errs.append(f"{label}: final month is partial but axis_last_month_days={days!r}")
+    elif days < MIN_FINAL_MONTH_DAYS:
+        # The pie's axis comes from the frozen engine, which the exporter cannot trim. If it
+        # ever ends on a stub month, failing the export is the honest outcome: shipping
+        # annualised one-day statistics is the thing this rule exists to ban, and quietly
+        # relabelling them "dropped" when they were not would be worse than either.
+        errs.append(f"{label}: final month has {days} trading days, below the "
+                    f"{MIN_FINAL_MONTH_DAYS}-day floor, but was KEPT on the stats axis. "
+                    f"Apply apply_min_day_rule to this axis, or if it comes from the engine, "
+                    f"the engine's axis needs the same trim before this bundle can ship.")
     text = d.get("axis_last_month_text")
     if not text or "partial" not in str(text).lower():
         errs.append(f"{label}: final month is partial but carries no renderable "
@@ -474,6 +503,75 @@ def panel_data_date(panel: pd.DataFrame) -> str:
     return pd.Timestamp(panel["date"].max()).strftime("%Y-%m-%d")
 
 
+#: Below this many trading days, a final monthly bucket is not a month — it is a sample of
+#: one or two prints wearing a month's label. Annualising its volatility (×√12) or feeding
+#: it to a beta regression produces a number with the shape of a statistic and none of the
+#: content. Ten is the ruling from #30-B triage: at ten or more the bucket stays with the
+#: existing disclosure; below it, the bucket is dropped from the stats axis entirely.
+MIN_FINAL_MONTH_DAYS = 10
+
+
+def final_month_days(panel: pd.DataFrame, axis_end) -> int | None:
+    """Trading days present in the final labelled month, or None if that month is complete.
+
+    "Complete" means the panel runs to the axis label itself — a month-end bucket whose data
+    actually reaches month-end. Anything short of that is a partial bucket, and the count is
+    how short.
+    """
+    if axis_end is None:
+        return None
+    end = pd.Timestamp(axis_end)
+    if pd.Timestamp(panel["date"].max()) >= end:
+        return None
+    start = end.to_period("M").start_time
+    dates = pd.to_datetime(panel["date"])
+    return int(dates[(dates >= start) & (dates <= end)].nunique())
+
+
+def apply_min_day_rule(panel: pd.DataFrame, rets: pd.DataFrame):
+    """Drop an unusably short final monthly bucket, and say which way the rule fell.
+
+    Returns `(rets, disclosure)`. The disclosure always describes what the reader is
+    actually looking at, which is the whole point of the rule having three outcomes rather
+    than two:
+
+        complete month   → nothing to say
+        >= 10 days       → kept, and disclosed as partial (unchanged behaviour)
+        <  10 days       → dropped from the axis, and disclosed as dropped
+
+    The dropped case still discloses. Silently trimming the bucket would make the stats
+    honest and the page misleading in a new way: the as-of date would advertise data more
+    recent than anything the figures were computed from, with nothing to explain the gap.
+    That is the same failure as #25's A-3, pointed the other way.
+    """
+    axis_end = rets.index[-1] if len(rets.index) else None
+    days = final_month_days(panel, axis_end)
+
+    if days is None:
+        return rets, {"axis_last_month_partial": False,
+                      "axis_last_month_days": None,
+                      "axis_last_month_text": None,
+                      "axis_last_month_action": None}
+
+    if days >= MIN_FINAL_MONTH_DAYS:
+        return rets, partial_month_disclosure(panel, axis_end)
+
+    trimmed = rets.iloc[:-1]
+    last_data = pd.Timestamp(panel["date"].max()).strftime("%Y-%m-%d")
+    unit = "trading day" if days == 1 else "trading days"
+    new_end = (pd.Timestamp(trimmed.index[-1]).strftime("%Y-%m-%d")
+               if len(trimmed.index) else None)
+    return trimmed, {
+        "axis_last_month_partial": False,   # the surviving axis ends on a complete month
+        "axis_last_month_days": days,
+        "axis_last_month_text": (
+            f"Data runs to {last_data}, but that final month held only {days} {unit} — "
+            f"too short to annualise, so it is excluded from every statistic here. "
+            f"Figures end {new_end}."),
+        "axis_last_month_action": "dropped",
+    }
+
+
 def partial_month_disclosure(panel: pd.DataFrame, axis_end) -> dict:
     """The three fields that disclose a partial final month, for any bundle built on `panel`.
 
@@ -492,7 +590,8 @@ def partial_month_disclosure(panel: pd.DataFrame, axis_end) -> dict:
     if not partial:
         return {"axis_last_month_partial": False,
                 "axis_last_month_days": None,
-                "axis_last_month_text": None}
+                "axis_last_month_text": None,
+                "axis_last_month_action": None}
     end = pd.Timestamp(axis_end)
     start = end.to_period("M").start_time
     dates = pd.to_datetime(panel["date"])
@@ -504,6 +603,9 @@ def partial_month_disclosure(panel: pd.DataFrame, axis_end) -> dict:
         "axis_last_month_days": days,
         "axis_last_month_text": (f"Final month is partial ({days} {unit} to {last}) — "
                                  f"stats include it."),
+        # Every bundle carries the same shape, so the frontend never has to branch on a
+        # missing key to tell "kept" from "dropped" from "nothing to say".
+        "axis_last_month_action": "kept",
     }
 
 
@@ -586,6 +688,10 @@ def build_stocks(scored: set[str], names: dict) -> dict:
     panel = pd.read_parquet(SP500_PANEL)
     panel["date"] = pd.to_datetime(panel["date"])
     rets = _monthly_returns(panel).dropna(how="all").tail(MAX_LOOKBACK)  # ≤72 month-ends
+    # #30-B min-day rule, applied BEFORE anything reads the axis — the benchmark series,
+    # the date list, the per-name stats and the history flags must all agree on where the
+    # axis ends, and they only do if the trim happens first.
+    rets, axis_note = apply_min_day_rule(panel, rets)
     bench = rets.mean(axis=1, skipna=True)                               # EW S&P proxy
     dates = [pd.Timestamp(d).strftime("%Y-%m-%d") for d in rets.index]
     axis_end = rets.index[-1] if len(rets.index) else None
@@ -615,7 +721,7 @@ def build_stocks(scored: set[str], names: dict) -> dict:
         # The true last data date, not the month-end bucket label (#24).
         "as_of": panel_data_date(panel),
         "axis_end_label": dates[-1] if dates else None,
-        **partial_month_disclosure(panel, axis_end),
+        **axis_note,
         "benchmark_label": "equal-weight S&P-500 proxy",
         "periods_per_year": 12,
         "dates": dates,
@@ -681,6 +787,7 @@ def build_explore(eligible: set[str], model_universe: set[str],
     panel = pd.read_parquet(MIDLARGE_PANEL)
     panel["date"] = pd.to_datetime(panel["date"])
     rets = _monthly_returns(panel).dropna(how="all").tail(MAX_LOOKBACK)
+    rets, axis_note = apply_min_day_rule(panel, rets)   # #30-B min-day rule
     bench = rets.mean(axis=1, skipna=True)
     axis_end = rets.index[-1] if len(rets.index) else None
 
@@ -758,7 +865,7 @@ def build_explore(eligible: set[str], model_universe: set[str],
         "as_of": panel_data_date(panel),
         "axis_end_label": (pd.Timestamp(axis_end).strftime("%Y-%m-%d") if axis_end is not None
                            else None),
-        **partial_month_disclosure(panel, axis_end),
+        **axis_note,
         "benchmark_label": "equal-weight wide-universe proxy (beta reference)",
         "cap_threshold_usd": CAP_LARGE_USD,
         "n_names": len(rows),

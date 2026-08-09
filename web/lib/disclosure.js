@@ -22,13 +22,24 @@
  * complete-month bundle produces no empty element.
  */
 export function partialMonthNote(bundle) {
-  if (!bundle || !bundle.axis_last_month_partial) return null;
+  if (!bundle) return null;
+  // #30-B added a third outcome. A DROPPED final bucket leaves the stats axis clean, so
+  // `axis_last_month_partial` is correctly false — but the bundle's as-of date still
+  // advertises data more recent than anything the figures were computed from, and saying
+  // nothing about that gap is A-3 pointed the other way.
+  const dropped = bundle.axis_last_month_action === "dropped";
+  if (!bundle.axis_last_month_partial && !dropped) return null;
   const text = bundle.axis_last_month_text;
   if (typeof text === "string" && text.trim()) return text;
   // Flag raised without the exported sentence: the export validator refuses this, so it can
   // only mean a hand-edited or stale bundle. Disclose anyway — silence is the failure mode
   // A-3 was about, and a vaguer sentence beats none.
   const days = bundle.axis_last_month_days;
+  if (dropped) {
+    return Number.isFinite(days)
+      ? `Final month held only ${days} trading days — excluded from every statistic here.`
+      : "Final month was too short to annualise — excluded from every statistic here.";
+  }
   return Number.isFinite(days)
     ? `Final month is partial (${days} trading days) — stats include it.`
     : "Final month is partial — stats include it.";
@@ -49,7 +60,7 @@ export function partialMonthNote(bundle) {
   disclosure fails the suite rather than shipping.
 */
 
-import { caveatDetail, PARTIAL_MONTH_DETAIL } from "./glossary.js";
+import { caveatDetail, PARTIAL_MONTH_DETAIL, DROPPED_MONTH_DETAIL } from "./glossary.js";
 
 /**
  * Every disclosure for a bundle, in the order they should be shown.
@@ -63,8 +74,16 @@ export function trustChips(bundle, statsBundle = bundle) {
 
   const partial = partialMonthNote(statsBundle);
   if (partial) {
-    // First, because it is the one that is true *today* rather than always.
-    chips.push({ id: "partial-month", text: partial, detail: PARTIAL_MONTH_DETAIL, transient: true });
+    // First, because it is the one that is true *today* rather than always. The detail
+    // must follow the ruling: telling a reader that stats "include it" when the bucket was
+    // dropped would be a wrong explanation attached to a correct sentence.
+    const dropped = statsBundle?.axis_last_month_action === "dropped";
+    chips.push({
+      id: "partial-month",
+      text: partial,
+      detail: dropped ? DROPPED_MONTH_DETAIL : PARTIAL_MONTH_DETAIL,
+      transient: true,
+    });
   }
 
   for (const text of bundle?.caveats ?? []) {

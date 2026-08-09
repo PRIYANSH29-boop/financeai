@@ -16,7 +16,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { GLOSSARY, CAVEAT_DETAIL, define, caveatDetail } from "./glossary.js";
+import {
+  GLOSSARY, CAVEAT_DETAIL, define, caveatDetail,
+  PARTIAL_MONTH_DETAIL, DROPPED_MONTH_DETAIL,
+} from "./glossary.js";
 import { trustChips, partialMonthNote } from "./disclosure.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -84,6 +87,50 @@ test("the partial-month note follows the bundle whose stats are on screen", () =
   };
   const chips = trustChips(index, stats);
   assert.equal(chips[0].text, stats.axis_last_month_text);
+});
+
+/* ------------------------------------------------- the #30-B dropped-month case */
+
+test("a dropped final month still discloses, even though the axis is clean", () => {
+  // axis_last_month_partial is correctly FALSE after a drop — the surviving axis ends on a
+  // complete month. Keying the note off that flag alone would go silent exactly when the
+  // as-of date starts advertising data the figures never saw.
+  const note = partialMonthNote({
+    axis_last_month_partial: false,
+    axis_last_month_days: 1,
+    axis_last_month_action: "dropped",
+  });
+  assert.ok(note, "a dropped bucket must not disclose nothing");
+  assert.match(note, /excluded/i);
+  assert.doesNotMatch(note, /stats include it/i,
+    "the kept-case wording must not leak into the drop");
+});
+
+test("the dropped chip gets the dropped explanation, not the kept one", () => {
+  const chips = trustChips(index, {
+    axis_last_month_partial: false,
+    axis_last_month_days: 1,
+    axis_last_month_action: "dropped",
+  });
+  assert.equal(chips[0].id, "partial-month");
+  assert.equal(chips[0].detail, DROPPED_MONTH_DETAIL);
+  assert.notEqual(chips[0].detail, PARTIAL_MONTH_DETAIL,
+    "telling a reader stats 'include it' when the bucket was dropped is a wrong explanation on a correct sentence");
+});
+
+test("a kept partial month keeps the kept explanation", () => {
+  const chips = trustChips(index, {
+    axis_last_month_partial: true,
+    axis_last_month_days: 12,
+    axis_last_month_action: "kept",
+    axis_last_month_text: "Final month is partial (12 trading days to X) — stats include it.",
+  });
+  assert.equal(chips[0].detail, PARTIAL_MONTH_DETAIL);
+});
+
+test("the two month explanations disagree about whether stats include the bucket", () => {
+  assert.match(PARTIAL_MONTH_DETAIL, /includes it/i);
+  assert.match(DROPPED_MONTH_DETAIL, /left out|excluded/i);
 });
 
 test("trustChips survives a bundle with no caveats rather than throwing", () => {

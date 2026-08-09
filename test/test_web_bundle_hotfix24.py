@@ -89,8 +89,22 @@ def test_shipped_explore_as_of_matches_the_wide_panel_data_date(explore):
         pytest.skip("wide panel is a gitignored build input")
     p = pd.read_parquet(panel, columns=["date"])
     assert explore["as_of"] == panel_data_date(p)
-    # And the axis label really is the later, misleading one we stopped publishing.
-    assert explore["axis_end_label"] >= explore["as_of"]
+
+    # The original assertion here was `axis_end_label >= as_of`: the axis label is the
+    # resampled month-end, which sits at or beyond the true data date, and publishing it as
+    # the as-of stamp was the #24 regression.
+    #
+    # #30-B's min-day rule adds the other direction. When the final bucket is too short to
+    # annualise it is dropped, and the surviving axis then ends BEFORE the data date on
+    # purpose. Both are correct; what must never happen is the two being confused, so the
+    # assertion is now on the relationship the ruling defines rather than on one inequality.
+    if explore.get("axis_last_month_action") == "dropped":
+        assert explore["axis_end_label"] < explore["as_of"], \
+            "a dropped final bucket must leave the axis ending before the data date"
+        assert explore["axis_last_month_partial"] is False
+    else:
+        assert explore["axis_end_label"] >= explore["as_of"], \
+            "a kept axis label is the resampled month-end, at or beyond the data date"
 
 
 # ============================================================ 2. the sanity band
