@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Donut from "./Donut";
 import PieHero from "./PieHero";
+import { DonutSkeleton, ErrorState } from "./States";
 import {
   ControlBar, WhyHolding, DriftPanel, HonestyPanel,
 } from "./Panels";
@@ -23,6 +24,8 @@ export default function PieApp({ index, initialPie }) {
   const [pie, setPie] = useState(initialPie);
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   const cache = useRef({ [initialPie.target_beta]: initialPie });
 
@@ -34,15 +37,18 @@ export default function PieApp({ index, initialPie }) {
   useEffect(() => {
     let cancelled = false;
     const cached = cache.current[target];
-    if (cached) { setPie(cached); setError(null); return; }
+    if (cached) { setPie(cached); setError(null); setLoading(false); return; }
 
     const key = keyFor(target);
     if (!key) {
       // No bundle entry: snap, never interpolate. Inventing a pie between two grid points
       // would put numbers on screen that the engine never produced.
-      setError("No precomputed pie for that risk level.");
+      setError({ title: "No precomputed pie for that risk level.",
+                 detail: "The slider snaps to the levels the engine actually built. Pick the nearest one." });
+      setLoading(false);
       return;
     }
+    setLoading(true);
     fetch(`bundle/beta/${key}.json`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((data) => {
@@ -50,10 +56,31 @@ export default function PieApp({ index, initialPie }) {
         cache.current[target] = data;
         setPie(data);
         setError(null);
+        setLoading(false);
       })
-      .catch((e) => !cancelled && setError(`Could not load that risk level (${e.message}).`));
+      .catch((e) => {
+        if (cancelled) return;
+        setError({
+          title: "Could not load that risk level.",
+          // The real reason, not a generic apology — the reader may be the only person who
+          // can act on it (offline, blocked, a half-finished deploy).
+          detail: `${e.message}. The figures below are still the ones for β${pie.target_beta.toFixed(2)}, not the level you just picked.`,
+        });
+        setLoading(false);
+      });
     return () => { cancelled = true; };
-  }, [target, keyFor]);
+    // `pie` is read only to name the stale beta in the error copy; depending on it would
+    // refetch every time a pie lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, keyFor, attempt]);
+
+  // Re-running the effect needs a value that actually changes: setTarget(b => b) is a
+  // no-op React bails out of, so a retry on the same beta would do nothing.
+  const retry = useCallback(() => {
+    delete cache.current[target];
+    setError(null);
+    setAttempt((n) => n + 1);
+  }, [target]);
 
   // A holding can drop out of the book when the beta target changes; clear a stale
   // selection rather than leaving zone 3 describing something no longer in the pie.
@@ -78,8 +105,8 @@ export default function PieApp({ index, initialPie }) {
                       target={target} setTarget={setTarget} pie={pie} />
 
           {error && (
-            <div className="card" role="alert">
-              <span className="loss">{error}</span>
+            <div className="card">
+              <ErrorState title={error.title} detail={error.detail} onRetry={retry} />
             </div>
           )}
 
@@ -93,9 +120,13 @@ export default function PieApp({ index, initialPie }) {
                   Click a slice to see why it&apos;s held
                 </span>
               </div>
-              <Donut holdings={pie.holdings} cashWeight={pie.cash_weight}
-                     capital={capital} currency={index.currency}
-                     selected={selected} onSelect={setSelected} />
+              {loading ? (
+                <DonutSkeleton />
+              ) : (
+                <Donut holdings={pie.holdings} cashWeight={pie.cash_weight}
+                       capital={capital} currency={index.currency}
+                       selected={selected} onSelect={setSelected} />
+              )}
               <div className="guardrails">{index.guardrails.text}</div>
             </div>
 

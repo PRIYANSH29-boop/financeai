@@ -18,6 +18,7 @@ import { useMemo, useState } from "react";
 import { pct, num, beta as fmtBeta } from "../lib/format";
 import { sortRows } from "../lib/explore";
 import { TrustFooter } from "./Trust";
+import { EmptyState } from "./States";
 
 const MAX_ROWS = 100;   // keep the DOM light; the count line reports how many matched
 
@@ -207,6 +208,24 @@ export default function ExploreView({ explore, index, onPickBasket }) {
                   </tr>
                   );
                 })}
+                {shown.length === 0 && (
+                  <tr>
+                    <td colSpan={COLS.length + 1}>
+                      <EmptyState
+                        title="No names match those filters."
+                        hint={q
+                          ? `Nothing here is called “${q}”. The table covers the scored S&P 500 universe only — small caps are excluded by methodology.`
+                          : "Those filters exclude every row. Widen the cap band or turn off “Scored only”."}
+                        action={
+                          <button type="button" className="chip"
+                                  onClick={() => { setQ(""); setCap("all"); setScoredOnly(false); }}>
+                            Clear filters
+                          </button>
+                        }
+                      />
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

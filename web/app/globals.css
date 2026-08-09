@@ -430,3 +430,120 @@ details.expander > .body { padding: 0 20px 20px; }
 
 /* A glossary term reads as a word, not a widget — the dotted rule is the only hint. */
 .ra-root .ra-tooltip-trigger { font-size: inherit; }
+
+/* ================================================================ #32 WP4 — states */
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* A skeleton stands in for a shape, at that shape's size, so nothing jumps on arrival. */
+.skeleton {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+  background-size: 240% 100%;
+  animation: skeleton-sweep 1.3s ease-in-out infinite;
+}
+@keyframes skeleton-sweep {
+  from { background-position: 200% 0; }
+  to   { background-position: -40% 0; }
+}
+.donut-skeleton { display: flex; flex-direction: column; align-items: center; }
+.skeleton-ring {
+  width: 300px; max-width: 100%; aspect-ratio: 1;
+  border-radius: 50%;
+  /* the hole, so the placeholder reads as a donut rather than a coin */
+  mask: radial-gradient(circle, transparent 0 54%, #000 54.5%);
+  -webkit-mask: radial-gradient(circle, transparent 0 54%, #000 54.5%);
+}
+.skeleton-push { margin-left: auto; }
+
+/* Empty and error states say WHAT, WHY and WHAT NEXT. "No results" alone is a dead end. */
+.state-block {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 30px 18px; text-align: center;
+}
+.state-title { margin: 0; font-weight: 620; }
+.state-hint { margin: 0; max-width: 52ch; color: var(--text-muted); font-size: 0.86rem; }
+.state-error { align-items: flex-start; text-align: left; padding: 4px 0; }
+
+/* Chart captions — what the marks mean, for charts a swatch list would only clutter. */
+.chart-caption {
+  margin: 8px 0 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;
+}
+.chart-caption .sw {
+  display: inline-block; width: 11px; height: 11px; border-radius: 2px;
+  margin-right: 6px; vertical-align: -1px;
+}
+.chart-caption .sw-loss { background: var(--loss); opacity: 0.45; border: 1px solid var(--loss); }
+
+/* ---------------------------------------------------------------- tap targets */
+/* Everything a finger is meant to hit clears 44px. Compact rows opt out explicitly via
+   .chip.tiny, which is only used inside dense tables that are not primary targets. */
+.chip, .tab, .link-btn { min-height: 44px; display: inline-flex; align-items: center; }
+.chip.tiny { min-height: 0; }
+.pie-legend li { min-height: 34px; }
+.picker-menu li { min-height: 44px; align-items: center; }
+.pick-chip { min-height: 36px; }
+.pick-chip button { min-width: 30px; min-height: 30px; display: inline-flex; align-items: center; justify-content: center; }
+.explore-table th { min-height: 44px; }
+.info button { min-width: 24px; min-height: 24px; }
+
+/* ---------------------------------------------------------------- phone pass */
+/* Verified against a ~390px viewport: nothing here may cause the BODY to scroll
+   sideways — wide content scrolls inside its own container instead. */
+html, body { overflow-x: hidden; }
+
+@media (max-width: 460px) {
+  .wrap { padding: 0 14px 44px; }
+  .hero { padding: 20px 0 18px; }
+  .hero-head, .hero-stats, .hero-note { padding: 0 14px; }
+  .hero-title { font-size: 1.35rem; letter-spacing: -0.02em; }
+  .hero-sub { font-size: 0.88rem; }
+  .hero-stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hero-stat-v { font-size: 1.2rem; }
+
+  .site-header .inner { padding: 12px 14px; gap: 10px; }
+  /* The three tabs do not fit side by side on a phone; scroll them rather than wrap
+     them into a second row that pushes the content down. */
+  .tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; }
+  .link-btn { margin-left: 0 !important; }
+
+  .card { padding: 15px; }
+  .tiles { grid-template-columns: 1fr 1fr; }
+  .pie-legend { grid-template-columns: 1fr; }
+  .pie-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+  .explore-filters { flex-direction: column; align-items: stretch; }
+  .explore-search { min-width: 0; width: 100%; }
+  .explore-head { flex-direction: column; }
+
+  details.expander > summary { padding: 14px 15px; }
+  details.expander > .body { padding: 0 15px 15px; }
+  .ra-root .ra-expander > summary { padding: 14px 15px; }
+  .ra-root .ra-expander-body { padding: 0 15px 15px; }
+  .ra-root .ra-expander-hint { display: none; }   /* the count is not worth a second line */
+
+  .modal { padding: 18px; }
+  .site-footer .inner { gap: 8px; }
+  .site-footer .inner span:last-child { margin-left: 0 !important; }
+}
+
+/* A 260px bubble centred on a term near the screen edge overflows a 390px viewport, and a
+   floating bubble has nothing to clamp against in pure CSS. On phones it stops floating
+   altogether and opens in the flow beneath the term, like a small accordion — predictable,
+   always on screen, and it cannot cover the number it is explaining. */
+@media (max-width: 460px) {
+  .ra-root .ra-tooltip { display: inline; }
+  .ra-root .ra-tooltip-bubble {
+    position: static;
+    display: block;
+    width: auto;
+    max-width: none;
+    transform: none;
+    margin: 6px 0;
+  }
+}

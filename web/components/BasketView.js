@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import { pct, num, beta as fmtBeta } from "../lib/format";
 import { basketScorecard, outcomeDistribution } from "../lib/basket";
 import { TrustPanel } from "./Trust";
+import { EmptyState } from "./States";
 
 const MAX_PICKS = 10;
 
@@ -106,7 +107,10 @@ export default function BasketView({ stocks, index, explore }) {
 
           <div className="basket-chips">
             {picks.length === 0 && (
-              <span className="empty-state">No stocks yet — add a few to begin.</span>
+              <EmptyState
+                title="No stocks picked yet."
+                hint={`Search above and add up to ${MAX_PICKS} names. The scorecard is equal-weight and built from each stock's committed monthly history, so picks with short histories shorten the window for all of them.`}
+              />
             )}
             {picks.map((tk) => (
               <span key={tk} className="pick-chip">

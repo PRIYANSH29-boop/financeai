@@ -80,7 +80,14 @@ export function GrowthChart({ series, benchmark, capital, currency, height = 230
   );
 }
 
-/** Drawdown: always ≤ 0, filled red — this is a loss, which is what red is for. */
+/**
+ * Drawdown: always ≤ 0, filled red — this is a loss, which is what red is for.
+ *
+ * One series, so a legend BOX would be noise — the thing a reader actually needs named is
+ * the encoding, not the identity. WP4 adds that as a caption instead: what the shaded area
+ * means and where zero is. "Legends everywhere" is satisfied by saying what the marks mean,
+ * which for a single-series chart is a sentence rather than a swatch list.
+ */
 export function DrawdownChart({ series, height = 150 }) {
   const width = 640;
   if (!series?.length) return null;
@@ -114,5 +121,17 @@ export function DrawdownChart({ series, height = 150 }) {
       <path d={area} fill="var(--loss)" fillOpacity="0.13" />
       <path d={path(series, x, y)} fill="none" stroke="var(--loss)" strokeWidth="1.7" />
     </svg>
+  );
+}
+
+/** The drawdown chart's caption — what the shaded area encodes, named once. */
+export function DrawdownLegend() {
+  return (
+    <p className="chart-caption">
+      <span className="sw sw-loss" aria-hidden="true" />
+      Shaded area is the fall from the pie&apos;s previous peak. The line sits at zero
+      whenever the pie is at a new high, so every dip below it is a loss you would have had
+      to sit through.
+    </p>
   );
 }

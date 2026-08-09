@@ -8,23 +8,9 @@
   the bundle is designed for.
 */
 
-import { useState } from "react";
 import { money, pct, num, pp, beta as fmtBeta } from "../lib/format";
-import { GrowthChart, DrawdownChart } from "./Charts";
+import { GrowthChart, DrawdownChart, DrawdownLegend } from "./Charts";
 import { Term, TrustPanel } from "./Trust";
-
-/* ------------------------------------------------------------------ tooltip */
-export function Info({ text }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="info"
-          onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button type="button" aria-label={text} onFocus={() => setOpen(true)}
-              onBlur={() => setOpen(false)}>i</button>
-      {open && <span className="bubble" role="tooltip">{text}</span>}
-    </span>
-  );
-}
 
 /* ------------------------------------------------------------------ zone 1 */
 export function ControlBar({ index, capital, setCapital, target, setTarget, pie }) {
@@ -272,6 +258,7 @@ export function HonestyPanel({ pie, index, capital }) {
 
         <h3 style={{ marginBottom: 8 }}>Drawdown — how far it fell from its peak</h3>
         <DrawdownChart series={pie.drawdown} />
+        <DrawdownLegend />
 
         <div className="tiles" style={{ marginTop: 18 }}>
           <div className="tile">
