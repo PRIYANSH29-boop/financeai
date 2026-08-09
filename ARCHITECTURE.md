@@ -3,7 +3,7 @@
 *Written for someone who has never seen this repo: a recruiter, an interviewer, or a future
 contributor. Every entry says what a thing does, what it reads, what it writes, which `make`
 target exercises it, and which tests cover it. Every claim describes the code **as it is**
-(post-#28), not as it is meant to become.*
+(post-#32), not as it is meant to become.*
 
 ⚠️ **Educational simulation. No real money, no investment advice, no forward projections.**
 
@@ -195,25 +195,51 @@ Each script is the CLI for one phase and writes a committed report under `figure
 | `map_sectors.py` / `sector_report.py` | 20 | `data/universe_midlarge_sectors.csv`, `figures/lab/sector_mapping.md` |
 | `regime_stress_test.py` | 14-ext | 2008 GFC + COVID stress windows |
 | `style_season_report.py` | 26 | `figures/lab/style_season_report.md` |
-| `export_web_bundle.py` | 19A | `web/public/bundle/*.json` — **the only writer of UI numbers** |
+| `export_web_bundle.py` | 19A, 30-B | `web/public/bundle/*.json` — **the only writer of UI numbers**; also enforces the min-day rule on the final monthly bucket |
 
 `universe.py` (repo root) builds the 1,200-name mid+large universe from SEC registrant data
 plus a liquidity screen: `shares_outstanding`, `candidates`, `is_non_equity`, `fallback_shares`.
 
-### `web/` — the static product (phase 19B, 23)
+### `web/` — the static product (phases 19B, 23, **32 "the living instrument"**)
 
 `output: 'export'` Next.js. No server, no login, no runtime data fetch.
 
+Phase 32 rebuilt the surface in four packages — design system, hero+pie, trust, states+mobile
+— without changing a single number. The direction was "from an honest report to a living
+instrument": dark quant-terminal, one signature accent, monospace figures, purposeful motion,
+and **honesty rendered as design** rather than as a stack of warnings.
+
+- **`web/styles/`** — the v3 token layer. `tokens.css` (dark palette, type/space/shape/motion
+  scales) and `ui.css`. Every token is namespaced `--ra-*` on a `.ra-root` scope. The v1 names
+  in `app/globals.css` were then re-pointed at these values, which is how the whole app went
+  dark in one block without any class being renamed or any layout moving.
+- **`web/components/ui/`** — the kit: `Chip`, `Badge`, `Tooltip`, `Expander`, `Num`,
+  `Wordmark`, plus `chartTheme.js`. **Chart colour is computed, not chosen**: a 7-slot
+  categorical palette (red excluded — it is reserved for losses, so a series can never
+  impersonate one) whose slot ORDER was picked by enumerating all 720 orderings against the
+  colour-vision gates, and a single-hue magnitude ramp for weight-ordered marks. `seriesColor`
+  returns `null` past the last slot rather than cycling.
 - **`web/lib/`** — pure, `node:test`-verified logic. `basket.js` (client-side equal-weight
   scorecard; **no forward-projection function exists, by design**), `explore.js` (the
-  ordering rule that sinks statistically implausible rows), `disclosure.js` (the partial-month
-  caveat), `format.js`.
-- **`web/components/`** — `PieApp` + `Panels` (control bar, why-this-holding, drift, the
-  "How honest is this?" receipts), `ExploreView` (1,200-name table), `BasketView`,
-  `Charts`/`Donut` (hand-rolled SVG, no chart library), `App` (view switch).
+  ordering rule that sinks statistically implausible rows), `disclosure.js` (partial-month
+  caveat + the trust-chip set), **`glossary.js`** (one definition per jargon term, for the
+  whole product), `format.js`.
+- **`web/components/`** — `PieApp` + `PieHero` (the page leads with the RESULT, not a form),
+  `Panels`, `Donut` (magnitude-ramp slices that morph between states), `Trust` (`<Term>` and
+  the trust chips), `States` (skeleton / empty / error), `ExploreView`, `BasketView`,
+  `Charts` (hand-rolled SVG, no chart library), `App`.
+- **`web/app/design/`** — `/design`, the design system rendering itself. Reference surface,
+  `noindex`, no product data.
 - **`web/public/bundle/`** — the exported JSON. **Gitignored**: it is a build artifact.
 
-**Make:** `make web-bundle` · `make web-dev` · `make deploy` · **Tests:** `npm test` (32).
+**Three rules the JS suite enforces, because each is the kind of promise that quietly stops
+being true:** every `var(--ra-*)` resolves and ink/surface pairs are *measured* against WCAG
+AA (not asserted in a comment); every shipped caveat reaches the screen **byte for byte** and
+no glossary definition may be forward-looking or contain a figure; and the mobile pass is
+proved as properties of the stylesheet — no fixed width past the phone content column, wide
+content scrolling itself and not the body, a 44px tap floor with visible opt-outs.
+
+**Make:** `make web-bundle` · `make web-dev` · `make deploy` · **Tests:** `npm test` (99).
 
 ### `test/`, `figures/`, `data/`
 
@@ -279,10 +305,19 @@ is frozen; a `make train` sitting next to `make pipeline` is an invitation to re
    because the UI still says "max 8% per stock".
 7. **Fail loud, never silently wrong.** Missing split basis raises; a future-dated `as_of`
    fails the export; a partial final month must be disclosed, not merely flagged.
-8. **A challenger beats the incumbent on pre-stated terms or not at all.** The #27 rules and
+8. **A stub month is not a month** (post-#30-B). A final monthly bucket with fewer than 10
+   trading days is DROPPED from the stats axis rather than annualised — one print wearing a
+   month's label produces a number with the shape of a statistic and none of the content.
+   At 10 days or more it is kept with the existing disclosure. **All three outcomes disclose
+   what the reader is looking at**: dropping it silently would leave the `as_of` date
+   advertising data more recent than anything the figures came from, which is #25's A-3
+   pointed the other way. `axis_last_month_action` (`kept`/`dropped`/`null`) carries the
+   ruling; the validator fails the export if a sub-floor bucket survives on an axis the
+   exporter cannot trim.
+9. **A challenger beats the incumbent on pre-stated terms or not at all.** The #27 rules and
    the #31 criterion were both fixed before any number was seen and applied as arithmetic.
    Three arms produced the same answer; none of them got to argue for itself afterwards.
-9. **Negative results are published.** The rejected Sharpe 1.81, the dropped value factor, the
+10. **Negative results are published.** The rejected Sharpe 1.81, the dropped value factor, the
    208-cell null grid. They are the credibility.
 
 ---
